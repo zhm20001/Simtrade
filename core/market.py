@@ -198,6 +198,7 @@ def get_batch_realtime_prices(codes):
                     info['change'] = float(parts[31]) if parts[31] else 0
                     info['change_pct'] = float(parts[32]) if parts[32] else 0
                     info['volume'] = float(parts[36]) if parts[36] else 0
+                    info['amount'] = float(parts[37]) * 10000 if parts[37] else 0  # 万元 → 元
                     info['turnover'] = float(parts[38]) if parts[38] else 0
                     info['high'] = float(parts[33]) if parts[33] else price
                     info['low'] = float(parts[34]) if parts[34] else price
