@@ -42,7 +42,7 @@ python simtrade.py sell_market sh600519 100 --force --reason "止损"
 ## 查看数据
 
 ```bash
-# 批量行情
+# 批量行情（一次请求获取多只股票，高效）
 python simtrade.py quotes sh600519,sz000858,sh601318
 
 # 历史交易记录
@@ -51,6 +51,8 @@ python simtrade.py history
 # 盈亏统计（已实现 + 未实现）
 python simtrade.py pnl
 ```
+
+**性能说明：** `quotes`、`status`、`pnl` 使用腾讯批量行情接口，多只股票仅 1 次网络请求。单只股票的 `quote` 和市价交易保持独立请求。
 
 ## 典型交易流程
 
