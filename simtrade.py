@@ -156,6 +156,35 @@ def get_realtime_price(code):
     return float(df.iloc[-1]['close'])
 
 
+def get_batch_realtime_prices(codes):
+    """批量获取实时行情，一次请求获取多只股票的价格和名称"""
+    if not codes:
+        return {}
+    result = {}
+    codes_str = ','.join(codes)
+    try:
+        url = f'http://qt.gtimg.cn/q={codes_str}'
+        r = requests.get(url, timeout=10)
+        for line in r.text.strip().split(';'):
+            line = line.strip()
+            if not line or '=' not in line:
+                continue
+            key, val = line.split('=', 1)
+            val = val.strip('"')
+            if not val:
+                continue
+            parts = val.split('~')
+            code = key.split('_')[-1] if '_' in key else key
+            if len(parts) > 3:
+                name = parts[1]
+                price = float(parts[3])
+                save_stock_name(code, name)
+                result[code] = {'price': price, 'name': name}
+    except Exception:
+        pass
+    return result
+
+
 def load_stock_names():
     """加载股票名称缓存"""
     if os.path.exists(NAMES_PATH):
@@ -438,11 +467,16 @@ def cmd_status(args):
     positions = []
     total_market_value = 0.0
     total_cost = 0.0
+    codes = list(portfolio['positions'].keys())
+    batch = get_batch_realtime_prices(codes) if codes else {}
     for code, pos in portfolio['positions'].items():
-        try:
-            current_price = get_realtime_price(code)
-        except Exception:
-            current_price = pos['avg_cost']
+        if code in batch:
+            current_price = batch[code]['price']
+        else:
+            try:
+                current_price = get_realtime_price(code)
+            except Exception:
+                current_price = pos['avg_cost']
         market_value = current_price * pos['qty']
         unrealized = (current_price - pos['avg_cost']) * pos['qty']
         total_market_value += market_value
@@ -489,21 +523,29 @@ def cmd_quote(args):
 def cmd_quotes(args):
     """批量获取行情"""
     codes = [c.strip() for c in args.codes.split(',')]
+    batch = get_batch_realtime_prices(codes)
     results = []
     for code in codes:
-        try:
-            price = get_realtime_price(code)
-            name = get_stock_name(code)
+        if code in batch:
             results.append({
                 'code': code,
-                'name': name,
-                'price': price,
+                'name': batch[code]['name'],
+                'price': batch[code]['price'],
             })
-        except Exception as e:
-            results.append({
-                'code': code,
-                'error': str(e),
-            })
+        else:
+            try:
+                price = get_realtime_price(code)
+                name = get_stock_name(code)
+                results.append({
+                    'code': code,
+                    'name': name,
+                    'price': price,
+                })
+            except Exception as e:
+                results.append({
+                    'code': code,
+                    'error': str(e),
+                })
     json_output({'quotes': results, 'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')})
 
 
@@ -566,11 +608,16 @@ def cmd_pnl(args):
         realized_pnl += float(t.get('amount', 0)) - float(t.get('commission', 0))
 
     unrealized_pnl = 0.0
+    codes = list(portfolio['positions'].keys())
+    batch = get_batch_realtime_prices(codes) if codes else {}
     for code, pos in portfolio['positions'].items():
-        try:
-            current_price = get_realtime_price(code)
-        except Exception:
-            current_price = pos['avg_cost']
+        if code in batch:
+            current_price = batch[code]['price']
+        else:
+            try:
+                current_price = get_realtime_price(code)
+            except Exception:
+                current_price = pos['avg_cost']
         unrealized_pnl += (current_price - pos['avg_cost']) * pos['qty']
 
     total_pnl = realized_pnl + unrealized_pnl
