@@ -33,18 +33,35 @@ DEFAULT_CONFIG = {
         'afternoon': ['13:00', '15:30'],
     },
     'data_dir': './data',
+    'request_timeout': 3,
+    'watch_interval': 2,
+    'watch_threshold': 1.0,
+    'watch_heartbeat_interval': 10,
 }
+
+_cached_config = None
 
 
 def load_config():
-    """加载配置文件，不存在则返回默认值"""
+    """加载配置文件，带缓存"""
+    global _cached_config
+    if _cached_config is not None:
+        return _cached_config
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             user_cfg = json.load(f)
         cfg = dict(DEFAULT_CONFIG)
         cfg.update(user_cfg)
+        _cached_config = cfg
         return cfg
-    return dict(DEFAULT_CONFIG)
+    _cached_config = dict(DEFAULT_CONFIG)
+    return _cached_config
+
+
+def reload_config():
+    """清除配置缓存，下次 load_config 重新读取"""
+    global _cached_config
+    _cached_config = None
 
 
 def ensure_data_dir():
@@ -71,7 +88,7 @@ def get_price_day_tx(code, end_date='', count=10, frequency='1d'):
         end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.date) else end_date.split(' ')[0]
     end_date = '' if end_date == datetime.datetime.now().strftime('%Y-%m-%d') else end_date
     URL = f'http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},{unit},,{end_date},{count},qfq'
-    st = json.loads(requests.get(URL, timeout=3).content)
+    st = json.loads(requests.get(URL, timeout=load_config().get('request_timeout', 3)).content)
     ms = 'qfq' + unit
     stk = st['data'][code]
     buf = stk[ms] if ms in stk else stk[unit]
@@ -89,7 +106,7 @@ def get_price_min_tx(code, end_date=None, count=10, frequency='1d'):
     if end_date:
         end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.date) else end_date.split(' ')[0]
     URL = f'http://ifzq.gtimg.cn/appstock/app/kline/mkline?param={code},m{ts},,{count}'
-    st = json.loads(requests.get(URL, timeout=3).content)
+    st = json.loads(requests.get(URL, timeout=load_config().get('request_timeout', 3)).content)
     buf = st['data'][code]['m' + str(ts)]
     df = pd.DataFrame(buf, columns=['time', 'open', 'close', 'high', 'low', 'volume', 'n1', 'n2'])
     df = df[['time', 'open', 'close', 'high', 'low', 'volume']]
@@ -111,7 +128,7 @@ def get_price_sina(code, end_date='', count=10, frequency='60m'):
         unit = 4 if frequency == '1200m' else 29 if frequency == '7200m' else 1
         count = count + (datetime.datetime.now() - end_date).days // unit
     URL = f'http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={code}&scale={ts}&ma=5&datalen={count}'
-    r = requests.get(URL, timeout=3)
+    r = requests.get(URL, timeout=load_config().get('request_timeout', 3))
     dstr = json.loads(r.content.decode('gbk', errors='ignore'))
     df = pd.DataFrame(dstr)
     if 'day' in df.columns:
@@ -166,7 +183,7 @@ def get_batch_realtime_prices(codes):
     codes_str = ','.join(codes)
     try:
         url = f'http://qt.gtimg.cn/q={codes_str}'
-        r = requests.get(url, timeout=3)
+        r = requests.get(url, timeout=load_config().get('request_timeout', 3))
         for line in r.text.strip().split(';'):
             line = line.strip()
             if not line or '=' not in line:
@@ -211,7 +228,7 @@ def get_stock_name(code):
         return names[code]
     try:
         url = f'http://qt.gtimg.cn/q={code}'
-        r = requests.get(url, timeout=3)
+        r = requests.get(url, timeout=load_config().get('request_timeout', 3))
         parts = r.text.split('~')
         if len(parts) > 1:
             name = parts[1]
@@ -772,8 +789,10 @@ def fetch_with_fallback(codes):
 def cmd_watch(args):
     """持续监控行情，价格变动超阈值时输出信号"""
     codes = [c.strip() for c in args.codes.split(',')]
-    threshold = args.threshold if args.threshold else 1.0
-    interval = args.interval if args.interval else 2
+    cfg = load_config()
+    threshold = args.threshold if args.threshold else cfg.get('watch_threshold', 1.0)
+    interval = args.interval if args.interval else cfg.get('watch_interval', 2)
+    heartbeat_interval = cfg.get('watch_heartbeat_interval', 10)
 
     # 获取基准价格
     batch = fetch_with_fallback(codes)
@@ -828,7 +847,7 @@ def cmd_watch(args):
                     last_alert_prices[code] = current
 
             # 心跳：每10次轮询
-            if poll_count % 10 == 0:
+            if poll_count % heartbeat_interval == 0:
                 prices = {code: batch.get(code, {}).get('price', base_prices[code]) for code in codes}
                 print(json.dumps({
                     'type': 'heartbeat',
