@@ -7,6 +7,7 @@ import datetime
 import json
 import os
 import sys
+import time
 
 import requests
 import pandas as pd
@@ -753,6 +754,97 @@ def cmd_report(args):
     })
 
 
+def cmd_watch(args):
+    """持续监控行情，价格变动超阈值时输出信号"""
+    codes = [c.strip() for c in args.codes.split(',')]
+    threshold = args.threshold if args.threshold else 1.0
+    interval = args.interval if args.interval else 5
+
+    # 获取基准价格
+    batch = get_batch_realtime_prices(codes)
+    base_prices = {}
+    for code in codes:
+        if code in batch:
+            base_prices[code] = batch[code]['price']
+            print(json.dumps({
+                'type': 'start',
+                'code': code,
+                'name': batch[code]['name'],
+                'base_price': batch[code]['price'],
+                'threshold': threshold,
+                'interval': interval,
+            }, ensure_ascii=False))
+        else:
+            print(json.dumps({'type': 'error', 'code': code, 'message': f'无法获取 {code} 行情'}, ensure_ascii=False))
+            return
+
+    sys.stdout.flush()
+    last_alert_prices = dict(base_prices)
+    poll_count = 0
+
+    try:
+        while True:
+            time.sleep(interval)
+            poll_count += 1
+            batch = get_batch_realtime_prices(codes)
+            for code in codes:
+                if code not in batch:
+                    continue
+                current = batch[code]['price']
+                base = base_prices[code]
+                last = last_alert_prices[code]
+                change_from_base = (current - base) / base * 100
+
+                if abs(current - last) / last * 100 >= threshold:
+                    direction = 'up' if current > last else 'down'
+                    print(json.dumps({
+                        'type': 'alert',
+                        'code': code,
+                        'name': batch[code]['name'],
+                        'base_price': base,
+                        'prev_price': last,
+                        'current_price': current,
+                        'change_pct': round((current - last) / last * 100, 2),
+                        'total_change_pct': round(change_from_base, 2),
+                        'direction': direction,
+                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+                    }, ensure_ascii=False))
+                    sys.stdout.flush()
+                    last_alert_prices[code] = current
+
+            # 心跳：每10次轮询
+            if poll_count % 10 == 0:
+                prices = {code: batch.get(code, {}).get('price', base_prices[code]) for code in codes}
+                print(json.dumps({
+                    'type': 'heartbeat',
+                    'prices': prices,
+                    'poll_count': poll_count,
+                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+                }, ensure_ascii=False))
+                sys.stdout.flush()
+
+    except KeyboardInterrupt:
+        # 输出最终汇总
+        batch = get_batch_realtime_prices(codes)
+        final_prices = {}
+        for code in codes:
+            current = batch.get(code, {}).get('price', base_prices[code])
+            base = base_prices[code]
+            final_prices[code] = {
+                'base_price': base,
+                'current_price': current,
+                'change_pct': round((current - base) / base * 100, 2),
+            }
+        print(json.dumps({
+            'type': 'summary',
+            'poll_count': poll_count,
+            'duration_seconds': poll_count * interval,
+            'prices': final_prices,
+            'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        }, ensure_ascii=False))
+        sys.stdout.flush()
+
+
 # === 6. main 入口 ===
 
 def main():
@@ -803,6 +895,11 @@ def main():
     p_report = sub.add_parser('report', help='交易复盘报告')
     p_report.add_argument('--last', type=int, help='最近N笔')
 
+    p_watch = sub.add_parser('watch', help='持续监控行情')
+    p_watch.add_argument('codes', help='股票代码，逗号分隔')
+    p_watch.add_argument('--threshold', type=float, help='变动告警阈值(百分比)，默认1.0')
+    p_watch.add_argument('--interval', type=int, help='轮询间隔(秒)，默认5')
+
     args = parser.parse_args()
 
     commands = {
@@ -818,6 +915,7 @@ def main():
         'pnl': cmd_pnl,
         'reset': cmd_reset,
         'report': cmd_report,
+        'watch': cmd_watch,
     }
 
     if args.command in commands:
