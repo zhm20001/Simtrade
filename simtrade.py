@@ -71,7 +71,7 @@ def get_price_day_tx(code, end_date='', count=10, frequency='1d'):
         end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.date) else end_date.split(' ')[0]
     end_date = '' if end_date == datetime.datetime.now().strftime('%Y-%m-%d') else end_date
     URL = f'http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},{unit},,{end_date},{count},qfq'
-    st = json.loads(requests.get(URL, timeout=10).content)
+    st = json.loads(requests.get(URL, timeout=3).content)
     ms = 'qfq' + unit
     stk = st['data'][code]
     buf = stk[ms] if ms in stk else stk[unit]
@@ -89,7 +89,7 @@ def get_price_min_tx(code, end_date=None, count=10, frequency='1d'):
     if end_date:
         end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.date) else end_date.split(' ')[0]
     URL = f'http://ifzq.gtimg.cn/appstock/app/kline/mkline?param={code},m{ts},,{count}'
-    st = json.loads(requests.get(URL, timeout=10).content)
+    st = json.loads(requests.get(URL, timeout=3).content)
     buf = st['data'][code]['m' + str(ts)]
     df = pd.DataFrame(buf, columns=['time', 'open', 'close', 'high', 'low', 'volume', 'n1', 'n2'])
     df = df[['time', 'open', 'close', 'high', 'low', 'volume']]
@@ -111,7 +111,7 @@ def get_price_sina(code, end_date='', count=10, frequency='60m'):
         unit = 4 if frequency == '1200m' else 29 if frequency == '7200m' else 1
         count = count + (datetime.datetime.now() - end_date).days // unit
     URL = f'http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={code}&scale={ts}&ma=5&datalen={count}'
-    r = requests.get(URL, timeout=10)
+    r = requests.get(URL, timeout=3)
     dstr = json.loads(r.content.decode('gbk', errors='ignore'))
     df = pd.DataFrame(dstr)
     if 'day' in df.columns:
@@ -211,7 +211,7 @@ def get_stock_name(code):
         return names[code]
     try:
         url = f'http://qt.gtimg.cn/q={code}'
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=3)
         parts = r.text.split('~')
         if len(parts) > 1:
             name = parts[1]
