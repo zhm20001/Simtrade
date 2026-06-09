@@ -166,7 +166,7 @@ def get_batch_realtime_prices(codes):
     codes_str = ','.join(codes)
     try:
         url = f'http://qt.gtimg.cn/q={codes_str}'
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=3)
         for line in r.text.strip().split(';'):
             line = line.strip()
             if not line or '=' not in line:
@@ -755,6 +755,20 @@ def cmd_report(args):
     })
 
 
+def fetch_with_fallback(codes):
+    """批量获取行情，失败时逐只回退"""
+    batch = get_batch_realtime_prices(codes)
+    missing = [c for c in codes if c not in batch]
+    for code in missing:
+        try:
+            price = get_realtime_price(code)
+            name = get_stock_name(code)
+            batch[code] = {'price': price, 'name': name}
+        except Exception:
+            pass
+    return batch
+
+
 def cmd_watch(args):
     """持续监控行情，价格变动超阈值时输出信号"""
     codes = [c.strip() for c in args.codes.split(',')]
@@ -762,7 +776,7 @@ def cmd_watch(args):
     interval = args.interval if args.interval else 5
 
     # 获取基准价格
-    batch = get_batch_realtime_prices(codes)
+    batch = fetch_with_fallback(codes)
     base_prices = {}
     for code in codes:
         if code in batch:
@@ -787,7 +801,7 @@ def cmd_watch(args):
         while True:
             time.sleep(interval)
             poll_count += 1
-            batch = get_batch_realtime_prices(codes)
+            batch = fetch_with_fallback(codes)
             for code in codes:
                 if code not in batch:
                     continue
@@ -826,7 +840,7 @@ def cmd_watch(args):
 
     except KeyboardInterrupt:
         # 输出最终汇总
-        batch = get_batch_realtime_prices(codes)
+        batch = fetch_with_fallback(codes)
         final_prices = {}
         for code in codes:
             current = batch.get(code, {}).get('price', base_prices[code])
