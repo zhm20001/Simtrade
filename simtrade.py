@@ -96,7 +96,7 @@ def get_price_min_tx(code, end_date=None, count=10, frequency='1d'):
     df.set_index(['time'], inplace=True)
     df.index.name = ''
     if 'qt' in st['data'][code] and code in st['data'][code]['qt']:
-        df['close'].iloc[-1] = float(st['data'][code]['qt'][code][3])
+        df.iloc[-1, df.columns.get_loc('close')] = float(st['data'][code]['qt'][code][3])
     return df
 
 
