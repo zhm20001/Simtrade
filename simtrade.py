@@ -20,6 +20,7 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, 'config.json')
 PORTFOLIO_PATH = os.path.join(DATA_DIR, 'portfolio.json')
 TRADES_PATH = os.path.join(DATA_DIR, 'trades.csv')
 NAMES_PATH = os.path.join(DATA_DIR, 'stock_names.json')
+STRATEGY_PATH = os.path.join(DATA_DIR, 'strategy.json')
 
 DEFAULT_CONFIG = {
     'default_cash': 1000000,
@@ -845,6 +846,93 @@ def cmd_watch(args):
         sys.stdout.flush()
 
 
+def load_strategy():
+    """加载策略文件"""
+    if not os.path.exists(STRATEGY_PATH):
+        return {'rules': []}
+    try:
+        with open(STRATEGY_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {'rules': []}
+
+
+def check_rules(rules, prices):
+    """检查策略规则是否触发，返回触发的规则列表"""
+    triggered = []
+    for rule in rules:
+        code = rule['code']
+        if code not in prices:
+            continue
+        current = prices[code]['price']
+        rtype = rule['type']
+        params = rule.get('params', {})
+        fired = False
+        if rtype == 'price_above' and current >= params['price']:
+            fired = True
+        elif rtype == 'price_below' and current <= params['price']:
+            fired = True
+        elif rtype == 'change_above':
+            base = params.get('base_price', current)
+            if base > 0 and (current - base) / base * 100 >= params['pct']:
+                fired = True
+        elif rtype == 'change_below':
+            base = params.get('base_price', current)
+            if base > 0 and (current - base) / base * 100 <= -params['pct']:
+                fired = True
+        if fired:
+            triggered.append({
+                'rule_name': rule.get('name', ''),
+                'type': rtype,
+                'code': code,
+                'name': prices[code]['name'],
+                'current_price': current,
+                'params': params,
+                'action': rule.get('action', 'alert'),
+            })
+    return triggered
+
+
+def cmd_strategy(args):
+    """策略管理"""
+    subcmd = args.strategy_cmd
+
+    if subcmd == 'list':
+        strategy = load_strategy()
+        json_output(strategy)
+
+    elif subcmd == 'load':
+        if not os.path.exists(STRATEGY_PATH):
+            json_error(f'策略文件不存在: {STRATEGY_PATH}，请先创建 data/strategy.json')
+        strategy = load_strategy()
+        json_output({
+            'status': 'ok',
+            'message': f'已加载 {len(strategy.get("rules", []))} 条策略',
+            'rules_count': len(strategy.get('rules', [])),
+        })
+
+    elif subcmd == 'apply':
+        code = args.code
+        strategy = load_strategy()
+        rules = [r for r in strategy.get('rules', []) if r['code'] == code]
+        if not rules:
+            json_error(f'没有针对 {code} 的策略规则')
+        batch = get_batch_realtime_prices([code])
+        if code not in batch:
+            json_error(f'无法获取 {code} 行情')
+        triggered = check_rules(rules, batch)
+        json_output({
+            'code': code,
+            'current_price': batch[code]['price'],
+            'rules_checked': len(rules),
+            'triggered': triggered,
+            'has_signal': len(triggered) > 0,
+        })
+
+    else:
+        json_error('未知策略子命令，使用 list / load / apply')
+
+
 # === 6. main 入口 ===
 
 def main():
@@ -900,6 +988,13 @@ def main():
     p_watch.add_argument('--threshold', type=float, help='变动告警阈值(百分比)，默认1.0')
     p_watch.add_argument('--interval', type=int, help='轮询间隔(秒)，默认5')
 
+    p_strategy = sub.add_parser('strategy', help='策略管理')
+    p_strategy_sub = p_strategy.add_subparsers(dest='strategy_cmd', help='策略子命令')
+    p_strategy_sub.add_parser('list', help='查看当前策略')
+    p_strategy_sub.add_parser('load', help='加载策略文件')
+    p_apply = p_strategy_sub.add_parser('apply', help='对指定股票应用策略')
+    p_apply.add_argument('code', help='股票代码')
+
     args = parser.parse_args()
 
     commands = {
@@ -916,6 +1011,7 @@ def main():
         'reset': cmd_reset,
         'report': cmd_report,
         'watch': cmd_watch,
+        'strategy': cmd_strategy,
     }
 
     if args.command in commands:
