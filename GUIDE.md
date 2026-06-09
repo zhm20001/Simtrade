@@ -15,6 +15,24 @@ python simtrade.py status
 python simtrade.py quote sh600519
 ```
 
+## 项目结构
+
+```
+simtrade/
+  simtrade.py          # CLI 入口（薄壳）
+  config.json          # 用户配置（可选，覆盖默认值）
+  core/
+    __init__.py
+    config.py           # 配置管理
+    engine.py           # 交易引擎（Engine 类）
+    market.py           # 行情服务
+  data/                 # 运行时数据（gitignore）
+    portfolio.json      # 账户状态
+    trades.csv          # 交易记录
+    stock_names.json    # 股票名称缓存
+    strategy.json       # 策略规则
+```
+
 ## 股票代码格式
 
 - 上海交易所：`sh` + 6位代码，如 `sh600519`（贵州茅台）
@@ -48,11 +66,27 @@ python simtrade.py quotes sh600519,sz000858,sh601318
 # 历史交易记录
 python simtrade.py history
 
-# 盈亏统计（已实现 + 未实现）
+# 盈亏统计（已实现 + 未实现，配对买卖计算）
 python simtrade.py pnl
 ```
 
 **性能说明：** `quotes`、`status`、`pnl` 使用腾讯批量行情接口，多只股票仅 1 次网络请求。单只股票的 `quote` 和市价交易保持独立请求。
+
+## 批量行情返回字段
+
+`quotes` 命令返回每只股票的完整行情信息：
+
+| 字段 | 说明 |
+|------|------|
+| `price` | 当前价格 |
+| `name` | 股票名称 |
+| `change` | 涨跌额 |
+| `change_pct` | 涨跌幅(%) |
+| `volume` | 成交量（手） |
+| `turnover` | 换手率(%) |
+| `high` | 最高价 |
+| `low` | 最低价 |
+| `open` | 开盘价 |
 
 ## 典型交易流程
 
@@ -103,6 +137,7 @@ python simtrade.py watch sh600519,sh600900 --threshold 0.5 --interval 3
 ```
 
 Ctrl+C 终止时输出汇总。输出格式为逐行 JSON：
+- `type: "start"` — 启动时输出基准价格
 - `type: "alert"` — 价格变动超阈值
 - `type: "heartbeat"` — 每10次轮询的心跳
 - `type: "summary"` — 终止时的最终汇总
@@ -118,8 +153,11 @@ python simtrade.py strategy list
 # 加载策略文件
 python simtrade.py strategy load
 
-# 对指定股票应用策略（检查是否触发）
+# 对指定股票应用策略
 python simtrade.py strategy apply sh600519
+
+# 检查所有策略
+python simtrade.py strategy apply
 ```
 
 **策略文件格式** (`data/strategy.json`)：
@@ -140,6 +178,40 @@ python simtrade.py strategy apply sh600519
 - `price_below` — 价格跌破指定值
 - `change_above` — 涨幅超过指定百分比
 - `change_below` — 跌幅超过指定百分比
+
+## 配置管理
+
+```bash
+# 查看当前配置
+python simtrade.py config show
+
+# 修改配置项
+python simtrade.py config set watch_interval 3
+python simtrade.py config set request_timeout 5
+
+# 重新加载配置（清除缓存）
+python simtrade.py config reload
+```
+
+**支持点号路径：**
+```bash
+python simtrade.py config set trading_hours.morning.0 09:30
+```
+
+**可配置参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `default_cash` | 1000000 | 默认初始资金 |
+| `commission_rate` | 0.0003 | 佣金费率（万三） |
+| `stamp_tax_rate` | 0.001 | 印花税率（千一，仅卖出） |
+| `min_commission` | 5.0 | 最低佣金（元） |
+| `slippage` | 0.001 | 滑点（千一，仅市价单） |
+| `request_timeout` | 3 | 网络请求超时（秒） |
+| `watch_interval` | 2 | 监控轮询间隔（秒） |
+| `watch_threshold` | 1.0 | 监控告警阈值（%） |
+| `watch_heartbeat_interval` | 10 | 心跳间隔（轮询次数） |
+| `trading_hours` | 见默认值 | 交易时段配置 |
 
 ## 输出格式
 
@@ -188,4 +260,18 @@ python simtrade.py reset
 
 # 或重新初始化指定金额
 python simtrade.py init --cash 500000
+```
+
+## 程序化调用（供 UI 或外部系统集成）
+
+```python
+from core.engine import Engine
+from core.market import get_batch_realtime_prices
+
+engine = Engine()
+result = engine.buy("sh600519", 1500.00, 100, force=True, reason="程序化买入")
+print(result)  # dict，不含 sys.exit
+
+quotes = get_batch_realtime_prices(["sh600519", "sz000858"])
+print(quotes)  # {code: {price, name, change, ...}}
 ```
