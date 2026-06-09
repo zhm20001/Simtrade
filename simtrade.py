@@ -654,6 +654,105 @@ def cmd_reset(args):
     json_output({'status': 'ok', 'message': '账户已重置', 'cash': portfolio['cash']})
 
 
+def cmd_report(args):
+    """交易复盘报告"""
+    trades = load_trades()
+    if not trades:
+        json_output({'summary': {'total_trades': 0}, 'round_trips': []})
+
+    last_n = args.last if args.last else len(trades)
+
+    # 按代码分组，配对买卖
+    buy_queue = {}  # code -> list of buy trades (FIFO)
+    round_trips = []
+
+    for t in trades:
+        code = t['code']
+        action = t['action']
+        if action == 'buy':
+            if code not in buy_queue:
+                buy_queue[code] = []
+            buy_queue[code].append(t)
+        elif action == 'sell':
+            if code in buy_queue and buy_queue[code]:
+                buy_t = buy_queue[code].pop(0)
+                buy_price = float(buy_t['price'])
+                sell_price = float(t['price'])
+                qty = int(t['qty'])
+                sell_amount = float(t.get('amount', sell_price * qty))
+                sell_commission = float(t.get('commission', 0))
+                buy_amount = float(buy_t.get('amount', buy_price * qty))
+                pnl = sell_amount - buy_amount - sell_commission
+                pnl_pct = (pnl / buy_amount * 100) if buy_amount else 0
+                try:
+                    bt = datetime.datetime.strptime(buy_t['timestamp'], '%Y-%m-%dT%H:%M:%S')
+                    st = datetime.datetime.strptime(t['timestamp'], '%Y-%m-%dT%H:%M:%S')
+                    holding_sec = (st - bt).total_seconds()
+                    h = int(holding_sec // 3600)
+                    m = int((holding_sec % 3600) // 60)
+                    s = int(holding_sec % 60)
+                    holding_time = f'{h}:{m:02d}:{s:02d}'
+                except Exception:
+                    holding_time = 'N/A'
+                round_trips.append({
+                    'code': code,
+                    'name': t.get('name', code),
+                    'buy_time': buy_t['timestamp'],
+                    'sell_time': t['timestamp'],
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'qty': qty,
+                    'pnl': round(pnl, 2),
+                    'pnl_pct': round(pnl_pct, 2),
+                    'holding_time': holding_time,
+                })
+
+    # 未配对的买入 = 持仓中
+    open_positions = []
+    codes_with_positions = []
+    for code, buys in buy_queue.items():
+        for b in buys:
+            open_positions.append({'code': code, 'buy_price': float(b['price']), 'qty': int(b['qty']), 'name': b.get('name', code)})
+            if code not in codes_with_positions:
+                codes_with_positions.append(code)
+
+    # 获取持仓当前价
+    batch = get_batch_realtime_prices(codes_with_positions) if codes_with_positions else {}
+    for p in open_positions:
+        current = batch.get(p['code'], {}).get('price', p['buy_price'])
+        p['current_price'] = current
+        p['unrealized_pnl'] = round((current - p['buy_price']) * p['qty'], 2)
+
+    # 取最近 N 笔 round trips
+    round_trips = round_trips[-last_n:] if last_n < len(round_trips) else round_trips
+
+    # 汇总统计
+    profits = [r['pnl'] for r in round_trips if r['pnl'] > 0]
+    losses = [r['pnl'] for r in round_trips if r['pnl'] <= 0]
+    total_realized = sum(r['pnl'] for r in round_trips)
+    avg_profit = sum(profits) / len(profits) if profits else 0
+    avg_loss = sum(losses) / len(losses) if losses else 0
+    profit_factor = abs(sum(profits) / sum(losses)) if losses and sum(losses) != 0 else float('inf') if profits else 0
+
+    json_output({
+        'summary': {
+            'total_trades': len(trades),
+            'buy_trades': len([t for t in trades if t['action'] == 'buy']),
+            'sell_trades': len([t for t in trades if t['action'] == 'sell']),
+            'round_trips': len(round_trips),
+            'win_count': len(profits),
+            'loss_count': len(losses),
+            'win_rate': round(len(profits) / len(round_trips) * 100, 2) if round_trips else 0,
+            'total_realized_pnl': round(total_realized, 2),
+            'avg_profit': round(avg_profit, 2),
+            'avg_loss': round(avg_loss, 2),
+            'profit_factor': round(profit_factor, 2),
+        },
+        'round_trips': round_trips,
+        'open_positions': open_positions,
+    })
+
+
 # === 6. main 入口 ===
 
 def main():
@@ -701,6 +800,9 @@ def main():
     sub.add_parser('pnl', help='盈亏统计')
     sub.add_parser('reset', help='重置账户')
 
+    p_report = sub.add_parser('report', help='交易复盘报告')
+    p_report.add_argument('--last', type=int, help='最近N笔')
+
     args = parser.parse_args()
 
     commands = {
@@ -715,6 +817,7 @@ def main():
         'history': cmd_history,
         'pnl': cmd_pnl,
         'reset': cmd_reset,
+        'report': cmd_report,
     }
 
     if args.command in commands:
