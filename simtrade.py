@@ -773,7 +773,7 @@ def cmd_watch(args):
     """持续监控行情，价格变动超阈值时输出信号"""
     codes = [c.strip() for c in args.codes.split(',')]
     threshold = args.threshold if args.threshold else 1.0
-    interval = args.interval if args.interval else 5
+    interval = args.interval if args.interval else 2
 
     # 获取基准价格
     batch = fetch_with_fallback(codes)
@@ -1000,7 +1000,7 @@ def main():
     p_watch = sub.add_parser('watch', help='持续监控行情')
     p_watch.add_argument('codes', help='股票代码，逗号分隔')
     p_watch.add_argument('--threshold', type=float, help='变动告警阈值(百分比)，默认1.0')
-    p_watch.add_argument('--interval', type=int, help='轮询间隔(秒)，默认5')
+    p_watch.add_argument('--interval', type=int, help='轮询间隔(秒)，默认2')
 
     p_strategy = sub.add_parser('strategy', help='策略管理')
     p_strategy_sub = p_strategy.add_subparsers(dest='strategy_cmd', help='策略子命令')
