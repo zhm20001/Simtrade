@@ -243,3 +243,164 @@ def require_portfolio():
     if p is None:
         json_error('账户未初始化，请先运行 init')
     return p
+
+
+# === 4. 交易引擎 ===
+
+def is_trading_hours(cfg=None):
+    """检查当前是否在交易时段"""
+    if cfg is None:
+        cfg = load_config()
+    now = datetime.datetime.now()
+    now_str = now.strftime('%H:%M')
+    hours = cfg.get('trading_hours', DEFAULT_CONFIG['trading_hours'])
+    morning_start = hours['morning'][0]
+    morning_end = hours['morning'][1]
+    afternoon_start = hours['afternoon'][0]
+    afternoon_end = hours['afternoon'][1]
+    in_morning = morning_start <= now_str <= morning_end
+    in_afternoon = afternoon_start <= now_str <= afternoon_end
+    return in_morning or in_afternoon
+
+
+def check_trading_hours(force=False):
+    """检查交易时间，不在交易时间则报错"""
+    if force:
+        return
+    if not is_trading_hours():
+        now = datetime.datetime.now().strftime('%H:%M')
+        json_error(f'当前 {now} 不在交易时段 (09:15-11:30, 13:00-15:30)，使用 --force 可绕过')
+
+
+def calc_commission(amount, cfg=None):
+    """计算买入佣金"""
+    if cfg is None:
+        cfg = load_config()
+    rate = cfg.get('commission_rate', DEFAULT_CONFIG['commission_rate'])
+    min_c = cfg.get('min_commission', DEFAULT_CONFIG['min_commission'])
+    return max(amount * rate, min_c)
+
+
+def calc_sell_cost(amount, cfg=None):
+    """计算卖出总手续费（佣金 + 印花税）"""
+    if cfg is None:
+        cfg = load_config()
+    commission = calc_commission(amount, cfg)
+    stamp_rate = cfg.get('stamp_tax_rate', DEFAULT_CONFIG['stamp_tax_rate'])
+    stamp_tax = amount * stamp_rate
+    return commission + stamp_tax
+
+
+def execute_buy(code, price, qty, reason='', force=False):
+    """执行买入"""
+    check_trading_hours(force)
+    cfg = load_config()
+    portfolio = require_portfolio()
+
+    if qty <= 0 or qty % 100 != 0:
+        json_error('买入数量必须为 100 的整数倍')
+
+    amount = price * qty
+    commission = calc_commission(amount, cfg)
+    total_cost = amount + commission
+
+    if total_cost > portfolio['cash']:
+        json_error(f'资金不足：需要 {total_cost:.2f}，可用 {portfolio["cash"]:.2f}')
+
+    name = get_stock_name(code)
+    portfolio['cash'] -= total_cost
+
+    if code in portfolio['positions']:
+        pos = portfolio['positions'][code]
+        total_qty = pos['qty'] + qty
+        pos['avg_cost'] = (pos['avg_cost'] * pos['qty'] + price * qty) / total_qty
+        pos['qty'] = total_qty
+        pos['trades'] += 1
+        pos['name'] = name
+    else:
+        portfolio['positions'][code] = {
+            'code': code,
+            'name': name,
+            'qty': qty,
+            'avg_cost': price,
+            'trades': 1,
+        }
+
+    save_portfolio(portfolio)
+    trade = {
+        'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'action': 'buy',
+        'code': code,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        'amount': round(amount, 2),
+        'commission': round(commission, 2),
+        'cash_after': round(portfolio['cash'], 2),
+        'reason': reason,
+    }
+    append_trade(trade)
+    return {
+        'status': 'ok',
+        'action': 'buy',
+        'code': code,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        'amount': round(amount, 2),
+        'commission': round(commission, 2),
+        'cash_after': round(portfolio['cash'], 2),
+    }
+
+
+def execute_sell(code, price, qty, reason='', force=False):
+    """执行卖出"""
+    check_trading_hours(force)
+    cfg = load_config()
+    portfolio = require_portfolio()
+
+    if code not in portfolio['positions']:
+        json_error(f'未持有 {code}')
+
+    pos = portfolio['positions'][code]
+    if qty <= 0 or qty % 100 != 0:
+        json_error('卖出数量必须为 100 的整数倍')
+    if qty > pos['qty']:
+        json_error(f'持仓不足：持有 {pos["qty"]} 股，尝试卖出 {qty} 股')
+
+    amount = price * qty
+    total_fee = calc_sell_cost(amount, cfg)
+
+    name = pos.get('name', get_stock_name(code))
+    portfolio['cash'] += amount - total_fee
+
+    pos['qty'] -= qty
+    pos['trades'] += 1
+    if pos['qty'] == 0:
+        del portfolio['positions'][code]
+
+    save_portfolio(portfolio)
+    trade = {
+        'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'action': 'sell',
+        'code': code,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        'amount': round(amount, 2),
+        'commission': round(total_fee, 2),
+        'cash_after': round(portfolio['cash'], 2),
+        'reason': reason,
+    }
+    append_trade(trade)
+    return {
+        'status': 'ok',
+        'action': 'sell',
+        'code': code,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        'amount': round(amount, 2),
+        'commission': round(total_fee, 2),
+        'cash_after': round(portfolio['cash'], 2),
+    }
