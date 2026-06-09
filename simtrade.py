@@ -404,3 +404,278 @@ def execute_sell(code, price, qty, reason='', force=False):
         'commission': round(total_fee, 2),
         'cash_after': round(portfolio['cash'], 2),
     }
+
+
+# === 5. CLI 命令处理 ===
+
+def cmd_init(args):
+    """初始化账户"""
+    cash = args.cash if args.cash else load_config().get('default_cash', DEFAULT_CONFIG['default_cash'])
+    ensure_data_dir()
+    portfolio = {
+        'account_id': 'sim_001',
+        'cash': float(cash),
+        'positions': {},
+        'initial_cash': float(cash),
+        'created_at': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'updated_at': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+    }
+    save_portfolio(portfolio)
+    if os.path.exists(TRADES_PATH):
+        os.remove(TRADES_PATH)
+    json_output({
+        'status': 'ok',
+        'message': '账户初始化成功',
+        'cash': portfolio['cash'],
+        'account_id': portfolio['account_id'],
+    })
+
+
+def cmd_status(args):
+    """查看账户状态"""
+    portfolio = require_portfolio()
+    cfg = load_config()
+    positions = []
+    total_market_value = 0.0
+    total_cost = 0.0
+    for code, pos in portfolio['positions'].items():
+        try:
+            current_price = get_realtime_price(code)
+        except Exception:
+            current_price = pos['avg_cost']
+        market_value = current_price * pos['qty']
+        unrealized = (current_price - pos['avg_cost']) * pos['qty']
+        total_market_value += market_value
+        total_cost += pos['avg_cost'] * pos['qty']
+        positions.append({
+            'code': code,
+            'name': pos.get('name', code),
+            'qty': pos['qty'],
+            'avg_cost': pos['avg_cost'],
+            'current_price': round(current_price, 2),
+            'market_value': round(market_value, 2),
+            'unrealized_pnl': round(unrealized, 2),
+        })
+    total_assets = portfolio['cash'] + total_market_value
+    total_pnl = total_assets - portfolio['initial_cash']
+    total_pnl_pct = (total_pnl / portfolio['initial_cash'] * 100) if portfolio['initial_cash'] else 0
+    json_output({
+        'cash': round(portfolio['cash'], 2),
+        'positions': positions,
+        'total_assets': round(total_assets, 2),
+        'total_market_value': round(total_market_value, 2),
+        'total_pnl': round(total_pnl, 2),
+        'total_pnl_pct': round(total_pnl_pct, 2),
+        'initial_cash': portfolio['initial_cash'],
+    })
+
+
+def cmd_quote(args):
+    """获取实时行情"""
+    code = args.code
+    try:
+        price = get_realtime_price(code)
+        name = get_stock_name(code)
+        json_output({
+            'code': code,
+            'name': name,
+            'price': price,
+            'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        })
+    except Exception as e:
+        json_error(f'获取行情失败: {e}')
+
+
+def cmd_quotes(args):
+    """批量获取行情"""
+    codes = [c.strip() for c in args.codes.split(',')]
+    results = []
+    for code in codes:
+        try:
+            price = get_realtime_price(code)
+            name = get_stock_name(code)
+            results.append({
+                'code': code,
+                'name': name,
+                'price': price,
+            })
+        except Exception as e:
+            results.append({
+                'code': code,
+                'error': str(e),
+            })
+    json_output({'quotes': results, 'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')})
+
+
+def cmd_buy(args):
+    """限价买入"""
+    result = execute_buy(args.code, args.price, args.qty, reason=getattr(args, 'reason', ''), force=args.force)
+    json_output(result)
+
+
+def cmd_sell(args):
+    """限价卖出"""
+    result = execute_sell(args.code, args.price, args.qty, reason=getattr(args, 'reason', ''), force=args.force)
+    json_output(result)
+
+
+def cmd_buy_market(args):
+    """市价买入"""
+    cfg = load_config()
+    try:
+        price = get_realtime_price(args.code)
+    except Exception as e:
+        json_error(f'获取行情失败: {e}')
+    slip = cfg.get('slippage', DEFAULT_CONFIG['slippage'])
+    price = round(price * (1 + slip), 2)
+    result = execute_buy(args.code, price, args.qty, reason=getattr(args, 'reason', ''), force=args.force)
+    result['slippage'] = slip
+    result['executed_price'] = price
+    json_output(result)
+
+
+def cmd_sell_market(args):
+    """市价卖出"""
+    cfg = load_config()
+    try:
+        price = get_realtime_price(args.code)
+    except Exception as e:
+        json_error(f'获取行情失败: {e}')
+    slip = cfg.get('slippage', DEFAULT_CONFIG['slippage'])
+    price = round(price * (1 - slip), 2)
+    result = execute_sell(args.code, price, args.qty, reason=getattr(args, 'reason', ''), force=args.force)
+    result['slippage'] = slip
+    result['executed_price'] = price
+    json_output(result)
+
+
+def cmd_history(args):
+    """查看历史交易记录"""
+    trades = load_trades()
+    json_output({'trades': trades, 'count': len(trades)})
+
+
+def cmd_pnl(args):
+    """盈亏统计"""
+    portfolio = require_portfolio()
+    trades = load_trades()
+
+    realized_pnl = 0.0
+    sell_trades = [t for t in trades if t.get('action') == 'sell']
+    for t in sell_trades:
+        realized_pnl += float(t.get('amount', 0)) - float(t.get('commission', 0))
+
+    unrealized_pnl = 0.0
+    for code, pos in portfolio['positions'].items():
+        try:
+            current_price = get_realtime_price(code)
+        except Exception:
+            current_price = pos['avg_cost']
+        unrealized_pnl += (current_price - pos['avg_cost']) * pos['qty']
+
+    total_pnl = realized_pnl + unrealized_pnl
+    total_pnl_pct = (total_pnl / portfolio['initial_cash'] * 100) if portfolio['initial_cash'] else 0
+
+    json_output({
+        'initial_cash': portfolio['initial_cash'],
+        'current_cash': round(portfolio['cash'], 2),
+        'realized_pnl': round(realized_pnl, 2),
+        'unrealized_pnl': round(unrealized_pnl, 2),
+        'total_pnl': round(total_pnl, 2),
+        'total_pnl_pct': round(total_pnl_pct, 2),
+        'total_trades': len(trades),
+        'sell_trades': len(sell_trades),
+    })
+
+
+def cmd_reset(args):
+    """重置账户"""
+    portfolio = load_portfolio()
+    initial = portfolio['initial_cash'] if portfolio else load_config().get('default_cash', DEFAULT_CONFIG['default_cash'])
+    ensure_data_dir()
+    portfolio = {
+        'account_id': 'sim_001',
+        'cash': float(initial),
+        'positions': {},
+        'initial_cash': float(initial),
+        'created_at': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'updated_at': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+    }
+    save_portfolio(portfolio)
+    if os.path.exists(TRADES_PATH):
+        os.remove(TRADES_PATH)
+    json_output({'status': 'ok', 'message': '账户已重置', 'cash': portfolio['cash']})
+
+
+# === 6. main 入口 ===
+
+def main():
+    parser = argparse.ArgumentParser(description='SimTrade - A股模拟交易系统')
+    sub = parser.add_subparsers(dest='command', help='可用命令')
+
+    p_init = sub.add_parser('init', help='初始化账户')
+    p_init.add_argument('--cash', type=float, help='初始资金')
+
+    sub.add_parser('status', help='查看账户状态')
+
+    p_quote = sub.add_parser('quote', help='获取实时行情')
+    p_quote.add_argument('code', help='股票代码 (如 sh600519)')
+
+    p_quotes = sub.add_parser('quotes', help='批量获取行情')
+    p_quotes.add_argument('codes', help='股票代码，逗号分隔 (如 sh600519,sz000858)')
+
+    p_buy = sub.add_parser('buy', help='限价买入')
+    p_buy.add_argument('code', help='股票代码')
+    p_buy.add_argument('price', type=float, help='委托价格')
+    p_buy.add_argument('qty', type=int, help='数量（100 的倍数）')
+    p_buy.add_argument('--force', action='store_true', help='绕过交易时间检查')
+    p_buy.add_argument('--reason', type=str, default='', help='交易备注')
+
+    p_sell = sub.add_parser('sell', help='限价卖出')
+    p_sell.add_argument('code', help='股票代码')
+    p_sell.add_argument('price', type=float, help='委托价格')
+    p_sell.add_argument('qty', type=int, help='数量（100 的倍数）')
+    p_sell.add_argument('--force', action='store_true', help='绕过交易时间检查')
+    p_sell.add_argument('--reason', type=str, default='', help='交易备注')
+
+    p_bm = sub.add_parser('buy_market', help='市价买入')
+    p_bm.add_argument('code', help='股票代码')
+    p_bm.add_argument('qty', type=int, help='数量（100 的倍数）')
+    p_bm.add_argument('--force', action='store_true', help='绕过交易时间检查')
+    p_bm.add_argument('--reason', type=str, default='', help='交易备注')
+
+    p_sm = sub.add_parser('sell_market', help='市价卖出')
+    p_sm.add_argument('code', help='股票代码')
+    p_sm.add_argument('qty', type=int, help='数量（100 的倍数）')
+    p_sm.add_argument('--force', action='store_true', help='绕过交易时间检查')
+    p_sm.add_argument('--reason', type=str, default='', help='交易备注')
+
+    sub.add_parser('history', help='查看历史交易记录')
+    sub.add_parser('pnl', help='盈亏统计')
+    sub.add_parser('reset', help='重置账户')
+
+    args = parser.parse_args()
+
+    commands = {
+        'init': cmd_init,
+        'status': cmd_status,
+        'quote': cmd_quote,
+        'quotes': cmd_quotes,
+        'buy': cmd_buy,
+        'sell': cmd_sell,
+        'buy_market': cmd_buy_market,
+        'sell_market': cmd_sell_market,
+        'history': cmd_history,
+        'pnl': cmd_pnl,
+        'reset': cmd_reset,
+    }
+
+    if args.command in commands:
+        commands[args.command](args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
