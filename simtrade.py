@@ -189,3 +189,57 @@ def get_stock_name(code):
     except Exception:
         pass
     return code
+
+
+# === 3. 数据持久化 ===
+
+def load_portfolio():
+    """加载账户状态"""
+    if not os.path.exists(PORTFOLIO_PATH):
+        return None
+    try:
+        with open(PORTFOLIO_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, KeyError):
+        json_error('portfolio.json 格式损坏，请运行 reset 重置')
+
+
+def save_portfolio(portfolio):
+    """保存账户状态"""
+    ensure_data_dir()
+    portfolio['updated_at'] = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    with open(PORTFOLIO_PATH, 'w', encoding='utf-8') as f:
+        json.dump(portfolio, f, ensure_ascii=False, indent=2)
+
+
+def append_trade(trade_record):
+    """追加一条交易记录到 trades.csv"""
+    ensure_data_dir()
+    file_exists = os.path.exists(TRADES_PATH) and os.path.getsize(TRADES_PATH) > 0
+    with open(TRADES_PATH, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'timestamp', 'action', 'code', 'name', 'price', 'qty',
+            'amount', 'commission', 'cash_after', 'reason'
+        ])
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(trade_record)
+
+
+def load_trades():
+    """加载所有交易记录"""
+    if not os.path.exists(TRADES_PATH):
+        return []
+    try:
+        df = pd.read_csv(TRADES_PATH, encoding='utf-8')
+        return df.to_dict('records')
+    except Exception:
+        return []
+
+
+def require_portfolio():
+    """获取账户状态，不存在则报错"""
+    p = load_portfolio()
+    if p is None:
+        json_error('账户未初始化，请先运行 init')
+    return p
