@@ -464,22 +464,25 @@ class SettingsWindow:
         self._swap_stocks(sel[0], sel[0] + 1)
 
     def _save(self):
-        self._sync_codes_to_group()
-        fields = {k: v.get() for k, v in self.field_vars.items()}
-        wl = {
-            'groups': self.groups,
-            'active_group': self.active_group_idx,
-            'fields': fields,
-            'refresh_interval': self.refresh_var.get(),
-            'font_size': self.font_var.get(),
-            'window_width': self.width_var.get(),
-            'window_height': None if not self.auto_height_var.get() else self.height_var.get(),
-            'opacity': round(self.opacity_var.get(), 2),
-        }
-        save_watchlist(wl)
-        self.watcher.watchlist = wl
-        self.watcher.apply_settings()
-        self.win.destroy()
+        try:
+            self._sync_codes_to_group()
+            fields = {k: v.get() for k, v in self.field_vars.items()}
+            wl = {
+                'groups': [{'name': g['name'], 'codes': list(g['codes'])} for g in self.groups],
+                'active_group': self.active_group_idx,
+                'fields': fields,
+                'refresh_interval': self.refresh_var.get(),
+                'font_size': self.font_var.get(),
+                'window_width': self.width_var.get(),
+                'window_height': None if not self.auto_height_var.get() else self.height_var.get(),
+                'opacity': round(self.opacity_var.get(), 2),
+            }
+            save_watchlist(wl)
+            self.watcher.watchlist = wl
+            self.watcher.apply_settings()
+            self.win.destroy()
+        except Exception as e:
+            messagebox.showerror('保存失败', str(e), parent=self.win)
 
 
 class WatcherApp:
@@ -531,22 +534,22 @@ class WatcherApp:
         toolbar.pack(fill='x')
         toolbar.pack_propagate(False)
 
-        tk.Label(toolbar, text=f' 自选股行情 v{VERSION}', bg=COLOR_TITLE, fg=COLOR_FG,
-                 font=('Arial', 11, 'bold')).pack(side='left', padx=4)
+        tk.Label(toolbar, text=' 📈', bg=COLOR_TITLE, fg=COLOR_FG,
+                 font=('Arial', 14)).pack(side='left', padx=4)
 
         # 分组快速切换
         groups = self.watchlist.get('groups', [])
         if len(groups) > 1:
             group_bar = tk.Frame(toolbar, bg=COLOR_TITLE)
-            group_bar.pack(side='left', padx=4)
-            ttk.Button(group_bar, text='◀', width=3, command=self._prev_group,
+            group_bar.pack(side='left', padx=2)
+            ttk.Button(group_bar, text='◀', width=2, command=self._prev_group,
                        style='Toolbar.TButton').pack(side='left')
             idx = self.watchlist.get('active_group', 0)
             self.group_label = tk.Label(group_bar, text=groups[idx]['name'],
                                          bg=COLOR_TITLE, fg=COLOR_ACCENT,
-                                         font=('Arial', 10), width=6)
+                                         font=('Arial', 10))
             self.group_label.pack(side='left', padx=2)
-            ttk.Button(group_bar, text='▶', width=3, command=self._next_group,
+            ttk.Button(group_bar, text='▶', width=2, command=self._next_group,
                        style='Toolbar.TButton').pack(side='left')
         else:
             self.group_label = None
@@ -754,28 +757,28 @@ class WatcherApp:
     def _refresh(self):
         if not self._running:
             return
-        codes = get_active_codes(self.watchlist)
-        if codes:
-            try:
-                batch = get_batch_realtime_prices(codes)
-                self._prev_quotes = dict(self.quotes)
-                self.quotes = batch
-                self.positions = load_positions()
-                self._update_labels()
 
-                strategy = load_strategy()
-                if strategy.get('rules'):
-                    triggered = check_rules(strategy['rules'], batch)
-                    if triggered:
-                        notify_triggered(triggered, strategy['rules'], batch)
-            except Exception:
-                pass
-
-        # 非交易时段降低刷新频率
         if is_trading_hours():
+            codes = get_active_codes(self.watchlist)
+            if codes:
+                try:
+                    batch = get_batch_realtime_prices(codes)
+                    self._prev_quotes = dict(self.quotes)
+                    self.quotes = batch
+                    self.positions = load_positions()
+                    self._update_labels()
+
+                    strategy = load_strategy()
+                    if strategy.get('rules'):
+                        triggered = check_rules(strategy['rules'], batch)
+                        if triggered:
+                            notify_triggered(triggered, strategy['rules'], batch)
+                except Exception:
+                    pass
             interval = self.watchlist.get('refresh_interval', 3) * 1000
         else:
-            interval = 30000  # 盘后 30 秒一次
+            # 非交易时段不请求，但保留定时器以便盘中自动恢复
+            interval = 30000
         self.root.after(interval, self._refresh)
 
     def _update_labels(self):
