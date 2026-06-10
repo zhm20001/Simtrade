@@ -2,9 +2,17 @@
 
 import json
 import os
+import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
+
+def _resolve_data_dir():
+    """打包后数据目录指向 ~/simtrade/data/，开发时用项目 data/"""
+    if getattr(sys, 'frozen', False):
+        return os.path.join(os.path.expanduser('~'), 'simtrade', 'data')
+    return os.path.join(SCRIPT_DIR, 'data')
+
+DATA_DIR = _resolve_data_dir()
 CONFIG_PATH = os.path.join(SCRIPT_DIR, 'config.json')
 PORTFOLIO_PATH = os.path.join(DATA_DIR, 'portfolio.json')
 TRADES_PATH = os.path.join(DATA_DIR, 'trades.csv')

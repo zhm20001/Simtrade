@@ -20,7 +20,9 @@ from core.config import ensure_data_dir, STRATEGY_PATH, PORTFOLIO_PATH
 from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules, is_trading_hours
 
-WATCHLIST_PATH = os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
+WATCHLIST_PATH = os.path.join(
+    os.path.expanduser('~'), 'simtrade', 'data', 'watchlist.json'
+) if getattr(sys, 'frozen', False) else os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
 VERSION = '0.7'
 
 DEFAULT_WATCHLIST = {
@@ -56,6 +58,25 @@ COLOR_ACCENT = '#0078d4'
 
 # 通知状态：记录每条规则是否已触发（仅首次触发，条件解除后重置）
 _triggered_state = {}  # key -> bool
+
+
+def _init_user_data():
+    """打包模式下首次启动，从 .app 内复制示例数据到 ~/simtrade/data/"""
+    if not getattr(sys, 'frozen', False):
+        return
+    user_dir = os.path.join(os.path.expanduser('~'), 'simtrade', 'data')
+    if os.path.exists(os.path.join(user_dir, 'watchlist.json')):
+        return
+    os.makedirs(user_dir, exist_ok=True)
+    bundle_data = os.path.join(sys._MEIPASS, 'data')
+    if not os.path.isdir(bundle_data):
+        return
+    for fname in os.listdir(bundle_data):
+        src = os.path.join(bundle_data, fname)
+        dst = os.path.join(user_dir, fname)
+        if os.path.isfile(src) and not os.path.exists(dst):
+            import shutil
+            shutil.copy2(src, dst)
 
 
 def load_watchlist():
@@ -870,6 +891,7 @@ class WatcherApp:
 
 
 def main():
+    _init_user_data()
     app = WatcherApp()
     app.run()
 
