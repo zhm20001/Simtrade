@@ -53,8 +53,8 @@ COLOR_BTN = '#4a4a4a'
 COLOR_BTN_FG = '#e0e0e0'
 COLOR_ACCENT = '#0078d4'
 
-# 通知防抖
-_notify_timestamps = {}
+# 通知状态：记录每条规则是否已触发（仅首次触发，条件解除后重置）
+_triggered_state = {}  # key -> bool
 
 
 def load_watchlist():
@@ -101,19 +101,25 @@ def send_notification(title, message):
         pass
 
 
-def notify_triggered(triggered):
-    global _notify_timestamps
-    now = time.time()
+def notify_triggered(triggered, all_rules, prices):
+    """仅首次触发通知：条件满足时通知一次，持续满足不再通知；
+    条件解除后再重新满足时才再次通知。"""
+    global _triggered_state
+    triggered_keys = set()
     for t in triggered:
         key = f"{t['rule_name']}_{t['code']}"
-        last = _notify_timestamps.get(key, 0)
-        if now - last < 60:
-            continue
-        _notify_timestamps[key] = now
-        title = f"策略触发: {t['rule_name']}"
-        direction = '突破' if 'above' in t['type'] else '跌破'
-        msg = f"{t['name']} {t['code']} 当前 {t['current_price']}，{direction}目标价"
-        send_notification(title, msg)
+        triggered_keys.add(key)
+        if not _triggered_state.get(key):
+            title = f"策略触发: {t['rule_name']}"
+            direction = '突破' if 'above' in t['type'] else '跌破'
+            msg = f"{t['name']} {t['code']} 当前 {t['current_price']}，{direction}目标价"
+            send_notification(title, msg)
+        _triggered_state[key] = True
+    # 条件解除的规则重置状态
+    for rule in all_rules:
+        key = f"{rule.get('name', '')}_{rule['code']}"
+        if key not in triggered_keys:
+            _triggered_state[key] = False
 
 
 class SettingsWindow:
@@ -544,7 +550,7 @@ class WatcherApp:
                 if strategy.get('rules'):
                     triggered = check_rules(strategy['rules'], batch)
                     if triggered:
-                        notify_triggered(triggered)
+                        notify_triggered(triggered, strategy['rules'], batch)
             except Exception:
                 pass
 
