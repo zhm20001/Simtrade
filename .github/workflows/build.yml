@@ -13,24 +13,20 @@ jobs:
       matrix:
         include:
           - arch: x64
-            python: '3.12'
-            pandas: 'pandas'
             suffix: win64
           - arch: x86
-            python: '3.11'
-            pandas: 'pandas==2.0.3'
             suffix: win32
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: '3.8'
           architecture: ${{ matrix.arch }}
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller ${{ matrix.pandas }} requests
+          pip install pyinstaller requests
 
       - name: Prepare clean sample data
         run: |
