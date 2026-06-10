@@ -39,13 +39,17 @@ DEFAULT_WATCHLIST = {
 }
 
 # A股配色
-COLOR_UP = '#ff4444'
-COLOR_DOWN = '#00cc00'
+COLOR_UP = '#cf4444'
+COLOR_DOWN = '#2ea043'
 COLOR_FLAT = '#888888'
-COLOR_BG = '#1e1e1e'
-COLOR_BG_ROW = '#252526'
-COLOR_FG = '#cccccc'
-COLOR_DIM = '#666666'
+COLOR_BG = '#2b2b2b'
+COLOR_BG_ROW = '#353535'
+COLOR_FG = '#d4d4d4'
+COLOR_DIM = '#808080'
+COLOR_TITLE = '#3c3c3c'
+COLOR_BTN = '#4a4a4a'
+COLOR_BTN_FG = '#e0e0e0'
+COLOR_ACCENT = '#0078d4'
 
 # 通知防抖
 _notify_timestamps = {}
@@ -125,9 +129,11 @@ class SettingsWindow:
         self.win.configure(bg=COLOR_BG)
         self.win.resizable(False, False)
         self.win.grab_set()
+        self.win.attributes('-topmost', True)
 
         wl = watcher_app.watchlist
-        pad = {'padx': 10, 'pady': 4}
+        pad = {'padx': 12, 'pady': 4}
+        entry_bg = '#404040'
 
         # === 自选股列表 ===
         tk.Label(self.win, text='自选股（最多10只）', bg=COLOR_BG, fg=COLOR_FG,
@@ -137,9 +143,10 @@ class SettingsWindow:
         list_frame.pack(fill='x', **pad)
 
         self.stock_listbox = tk.Listbox(
-            list_frame, height=6, bg='#333333', fg=COLOR_FG,
-            selectbackground='#444444', font=('Consolas', 11),
-            relief='flat', highlightthickness=0,
+            list_frame, height=6, bg=entry_bg, fg=COLOR_FG,
+            selectbackground=COLOR_ACCENT, selectforeground='white',
+            font=('Consolas', 11), relief='flat', highlightthickness=1,
+            highlightbackground='#555555',
         )
         self.stock_listbox.pack(side='left', fill='x', expand=True)
 
@@ -155,8 +162,9 @@ class SettingsWindow:
         btn_frame.pack(fill='x', **pad)
 
         tk.Button(btn_frame, text='移除选中', command=self._remove_stock,
-                  bg='#444444', fg=COLOR_FG, relief='flat',
-                  font=('Arial', 10)).pack(side='left')
+                  bg=COLOR_BTN, fg=COLOR_BTN_FG, relief='flat',
+                  activebackground=COLOR_ACCENT, activeforeground='white',
+                  cursor='hand2', font=('Arial', 10)).pack(side='left')
 
         # 添加输入
         add_frame = tk.Frame(self.win, bg=COLOR_BG)
@@ -164,13 +172,15 @@ class SettingsWindow:
 
         tk.Label(add_frame, text='添加:', bg=COLOR_BG, fg=COLOR_FG,
                  font=('Arial', 10)).pack(side='left')
-        self.add_entry = tk.Entry(add_frame, width=12, bg='#333333', fg=COLOR_FG,
+        self.add_entry = tk.Entry(add_frame, width=12, bg=entry_bg, fg=COLOR_FG,
                                   insertbackground=COLOR_FG, font=('Consolas', 11),
-                                  relief='flat')
+                                  relief='flat', highlightthickness=1,
+                                  highlightbackground='#555555')
         self.add_entry.pack(side='left', padx=5)
         tk.Button(add_frame, text='+', command=self._add_stock,
-                  bg='#444444', fg=COLOR_FG, relief='flat',
-                  font=('Arial', 12, 'bold'), width=3).pack(side='left')
+                  bg=COLOR_ACCENT, fg='white', relief='flat',
+                  activebackground='#005a9e', activeforeground='white',
+                  cursor='hand2', font=('Arial', 12, 'bold'), width=3).pack(side='left')
 
         # === 显示字段 ===
         tk.Label(self.win, text='显示字段', bg=COLOR_BG, fg=COLOR_FG,
@@ -186,7 +196,7 @@ class SettingsWindow:
             var = tk.BooleanVar(value=wl['fields'].get(key, False))
             self.field_vars[key] = var
             tk.Checkbutton(field_frame, text=label, variable=var,
-                           bg=COLOR_BG, fg=COLOR_FG, selectcolor='#333333',
+                           bg=COLOR_BG, fg=COLOR_FG, selectcolor=entry_bg,
                            activebackground=COLOR_BG, activeforeground=COLOR_FG,
                            font=('Arial', 10)).grid(row=i//2, column=i%2, sticky='w')
 
@@ -209,32 +219,38 @@ class SettingsWindow:
             tk.Label(num_frame, text=label, bg=COLOR_BG, fg=COLOR_FG,
                      font=('Arial', 10)).grid(row=i, column=0, sticky='w', pady=2)
             tk.Spinbox(num_frame, from_=lo, to=hi, textvariable=var, width=6,
-                       bg='#333333', fg=COLOR_FG, font=('Consolas', 11),
-                       relief='flat', insertbackground=COLOR_FG
+                       bg=entry_bg, fg=COLOR_FG, font=('Consolas', 11),
+                       relief='flat', insertbackground=COLOR_FG,
+                       highlightthickness=1, highlightbackground='#555555'
                        ).grid(row=i, column=1, sticky='w', padx=5, pady=2)
 
         height_frame = tk.Frame(num_frame, bg=COLOR_BG)
         height_frame.grid(row=len(nums), column=0, columnspan=2, sticky='w', pady=2)
         tk.Checkbutton(height_frame, text='手动高度:', variable=self.auto_height_var,
-                       bg=COLOR_BG, fg=COLOR_FG, selectcolor='#333333',
+                       bg=COLOR_BG, fg=COLOR_FG, selectcolor=entry_bg,
                        activebackground=COLOR_BG, activeforeground=COLOR_FG,
                        font=('Arial', 10)).pack(side='left')
         self.height_spin = tk.Spinbox(height_frame, from_=100, to=1200,
                                       textvariable=self.height_var, width=6,
-                                      bg='#333333', fg=COLOR_FG, font=('Consolas', 11),
-                                      relief='flat', insertbackground=COLOR_FG)
+                                      bg=entry_bg, fg=COLOR_FG, font=('Consolas', 11),
+                                      relief='flat', insertbackground=COLOR_FG,
+                                      highlightthickness=1, highlightbackground='#555555')
         self.height_spin.pack(side='left', padx=5)
 
         # === 保存/取消 ===
         action_frame = tk.Frame(self.win, bg=COLOR_BG)
-        action_frame.pack(fill='x', **pad)
+        action_frame.pack(fill='x', **pad, pady=(8, 12))
 
         tk.Button(action_frame, text='保存', command=self._save,
-                  bg='#0066cc', fg='white', relief='flat',
-                  font=('Arial', 11, 'bold'), width=10).pack(side='left', expand=True)
+                  bg=COLOR_ACCENT, fg='white', relief='flat',
+                  activebackground='#005a9e', activeforeground='white',
+                  cursor='hand2', font=('Arial', 11, 'bold'), width=10
+                  ).pack(side='left', expand=True)
         tk.Button(action_frame, text='取消', command=self.win.destroy,
-                  bg='#444444', fg=COLOR_FG, relief='flat',
-                  font=('Arial', 11), width=10).pack(side='left', expand=True)
+                  bg=COLOR_BTN, fg=COLOR_BTN_FG, relief='flat',
+                  activebackground='#555555', activeforeground='white',
+                  cursor='hand2', font=('Arial', 11), width=10
+                  ).pack(side='left', expand=True)
 
     def _populate_list(self, codes):
         self.stock_listbox.delete(0, tk.END)
@@ -298,22 +314,22 @@ class WatcherApp:
 
     def __init__(self):
         self.watchlist = load_watchlist()
-        self.quotes = {}  # {code: {price, name, change, ...}}
+        self.quotes = {}
         self._prev_quotes = {}
         self._running = True
         self._resize_after_id = None
 
-        # 主窗口
+        # 主窗口 — 普通窗口（可缩放、Dock 可恢复）
         self.root = tk.Tk()
         self.root.title('极简盯盘')
         self.root.configure(bg=COLOR_BG)
-        self.root.overrideredirect(True)  # 无边框
+        self.root.resizable(True, True)
+        self.root.minsize(200, 100)
 
         # 置顶
         self.root.attributes('-topmost', True)
-        self.root.attributes('-alpha', 0.95)
 
-        # macOS 特殊处理
+        # macOS: 紧凑工具窗口样式
         if platform.system() == 'Darwin':
             try:
                 self.root.tk.call('::tk::unsupported::MacWindowStyle', 'style',
@@ -321,31 +337,24 @@ class WatcherApp:
             except Exception:
                 pass
 
-        # 窗口大小
+        # 窗口大小和位置
         self._apply_window_size()
 
-        # 标题栏
-        self.title_bar = tk.Frame(self.root, bg='#333333', cursor='fleur')
-        self.title_bar.pack(fill='x')
+        # 工具栏
+        toolbar = tk.Frame(self.root, bg=COLOR_TITLE, height=32)
+        toolbar.pack(fill='x')
+        toolbar.pack_propagate(False)
 
-        tk.Label(self.title_bar, text=' 自选股行情', bg='#333333', fg=COLOR_FG,
-                 font=('Arial', 10, 'bold')).pack(side='left')
+        tk.Label(toolbar, text=' 自选股行情', bg=COLOR_TITLE, fg=COLOR_FG,
+                 font=('Arial', 11, 'bold')).pack(side='left', padx=4)
 
-        btn_style = {'bg': '#333333', 'fg': COLOR_FG, 'relief': 'flat',
-                     'font': ('Arial', 12), 'padx': 6, 'pady': 2,
-                     'activebackground': '#555555', 'activeforeground': 'white'}
+        btn_style = {'bg': COLOR_BTN, 'fg': COLOR_BTN_FG, 'relief': 'flat',
+                     'font': ('Arial', 11), 'padx': 8, 'pady': 2, 'bd': 0,
+                     'activebackground': COLOR_ACCENT, 'activeforeground': 'white',
+                     'cursor': 'hand2'}
 
-        tk.Button(self.title_bar, text='⚙', command=self._open_settings,
-                  **btn_style).pack(side='left', padx=2)
-        tk.Button(self.title_bar, text='—', command=self._minimize,
-                  **btn_style).pack(side='right', padx=2)
-        tk.Button(self.title_bar, text='×', command=self._quit,
-                  **btn_style).pack(side='right', padx=2)
-
-        # 标题栏拖拽
-        self._drag_data = {'x': 0, 'y': 0}
-        self.title_bar.bind('<ButtonPress-1>', self._drag_start)
-        self.title_bar.bind('<B1-Motion>', self._drag_move)
+        tk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
+                  **btn_style).pack(side='right', padx=2, pady=3)
 
         # 内容区域（可滚动）
         self.content_frame = tk.Frame(self.root, bg=COLOR_BG)
@@ -413,7 +422,10 @@ class WatcherApp:
         self._render_quotes()
 
     def _on_scroll(self, event):
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        if platform.system() == 'Darwin':
+            self.canvas.yview_scroll(int(-1 * event.delta), 'units')
+        else:
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
 
     def _on_resize(self, event):
         if event.widget != self.root:
@@ -432,20 +444,8 @@ class WatcherApp:
             wl['window_height'] = self.root.winfo_height()
         save_watchlist(wl)
 
-    def _drag_start(self, event):
-        self._drag_data['x'] = event.x
-        self._drag_data['y'] = event.y
-
-    def _drag_move(self, event):
-        x = self.root.winfo_x() + event.x - self._drag_data['x']
-        y = self.root.winfo_y() + event.y - self._drag_data['y']
-        self.root.geometry(f'+{x}+{y}')
-
     def _open_settings(self):
         SettingsWindow(self.root, self)
-
-    def _minimize(self):
-        self.root.withdraw()
 
     def _quit(self):
         self._running = False
