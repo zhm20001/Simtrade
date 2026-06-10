@@ -16,7 +16,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from core.config import ensure_data_dir, STRATEGY_PATH
+from core.config import ensure_data_dir, STRATEGY_PATH, PORTFOLIO_PATH
 from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules, is_trading_hours
 
@@ -88,7 +88,16 @@ def get_active_codes(wl):
     return groups[idx].get('codes', [])
 
 
-def save_watchlist(wl):
+def load_positions():
+    """加载持仓数据，返回 {code: {qty, avg_cost}}"""
+    if not os.path.exists(PORTFOLIO_PATH):
+        return {}
+    try:
+        with open(PORTFOLIO_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('positions', {})
+    except Exception:
+        return {}
     ensure_data_dir()
     with open(WATCHLIST_PATH, 'w', encoding='utf-8') as f:
         json.dump(wl, f, ensure_ascii=False, indent=2)
@@ -499,6 +508,7 @@ class WatcherApp:
         self.watchlist = load_watchlist()
         self.quotes = {}
         self._prev_quotes = {}
+        self.positions = {}
         self._running = True
         self._resize_after_id = None
         # 缓存已创建的控件，避免重建导致闪烁
@@ -718,10 +728,17 @@ class WatcherApp:
 
             # 第四行：高/低/换
             row4 = tk.Frame(frame, bg=COLOR_BG_ROW)
-            row4.pack(fill='x', padx=8, pady=(0, 6))
+            row4.pack(fill='x', padx=8)
             lbl_extra2 = tk.Label(row4, text='', bg=COLOR_BG_ROW, fg=COLOR_DIM,
                                   font=('Consolas', fs - 2), anchor='w')
             lbl_extra2.pack(fill='x')
+
+            # 第五行：持仓（仅持仓股显示）
+            row5 = tk.Frame(frame, bg=COLOR_BG_ROW)
+            row5.pack(fill='x', padx=8, pady=(0, 6))
+            lbl_position = tk.Label(row5, text='', bg=COLOR_BG_ROW, fg=COLOR_DIM,
+                                     font=('Consolas', fs - 2), anchor='w')
+            lbl_position.pack(fill='x')
 
             self._stock_widgets[code] = {
                 'frame': frame,
@@ -731,6 +748,7 @@ class WatcherApp:
                 'change': lbl_change,
                 'extra1': lbl_extra1,
                 'extra2': lbl_extra2,
+                'position': lbl_position,
             }
 
     def _refresh(self):
@@ -742,6 +760,7 @@ class WatcherApp:
                 batch = get_batch_realtime_prices(codes)
                 self._prev_quotes = dict(self.quotes)
                 self.quotes = batch
+                self.positions = load_positions()
                 self._update_labels()
 
                 strategy = load_strategy()
@@ -782,6 +801,7 @@ class WatcherApp:
                 w['change'].config(text='')
                 w['extra1'].config(text='')
                 w['extra2'].config(text='')
+                w['position'].config(text='')
                 continue
 
             price = quote.get('price', 0)
@@ -820,6 +840,21 @@ class WatcherApp:
             if fields.get('turnover') and quote.get('turnover'):
                 extra2_parts.append(f'换:{quote["turnover"]:.2f}%')
             w['extra2'].config(text='  '.join(extra2_parts))
+
+            # 持仓信息
+            pos = self.positions.get(code)
+            if pos and pos.get('qty', 0) > 0:
+                avg_cost = pos['avg_cost']
+                qty = pos['qty']
+                pnl = (price - avg_cost) * qty
+                pnl_pct = (price - avg_cost) / avg_cost * 100 if avg_cost > 0 else 0
+                pnl_color = COLOR_UP if pnl >= 0 else COLOR_DOWN
+                pnl_sign = '+' if pnl >= 0 else ''
+                w['position'].config(
+                    text=f'持仓:{qty}股 成本:{avg_cost:.2f} 浮盈:{pnl_sign}{pnl:.0f}({pnl_sign}{pnl_pct:.2f}%)',
+                    fg=pnl_color)
+            else:
+                w['position'].config(text='')
 
     def run(self):
         self.root.mainloop()
