@@ -524,12 +524,22 @@ class WatcherApp:
         tk.Label(toolbar, text=f' 自选股行情 v{VERSION}', bg=COLOR_TITLE, fg=COLOR_FG,
                  font=('Arial', 11, 'bold')).pack(side='left', padx=4)
 
+        # 分组快速切换
         groups = self.watchlist.get('groups', [])
-        idx = self.watchlist.get('active_group', 0)
-        group_name = groups[idx]['name'] if groups and idx < len(groups) else ''
-        if group_name and group_name != '默认':
-            tk.Label(toolbar, text=group_name, bg=COLOR_TITLE, fg=COLOR_ACCENT,
-                     font=('Arial', 10)).pack(side='left', padx=4)
+        if len(groups) > 1:
+            group_bar = tk.Frame(toolbar, bg=COLOR_TITLE)
+            group_bar.pack(side='left', padx=4)
+            ttk.Button(group_bar, text='◀', width=3, command=self._prev_group,
+                       style='Toolbar.TButton').pack(side='left')
+            idx = self.watchlist.get('active_group', 0)
+            self.group_label = tk.Label(group_bar, text=groups[idx]['name'],
+                                         bg=COLOR_TITLE, fg=COLOR_ACCENT,
+                                         font=('Arial', 10), width=6)
+            self.group_label.pack(side='left', padx=2)
+            ttk.Button(group_bar, text='▶', width=3, command=self._next_group,
+                       style='Toolbar.TButton').pack(side='left')
+        else:
+            self.group_label = None
 
         ttk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
                    style='Toolbar.TButton').pack(side='right', padx=4, pady=3)
@@ -594,6 +604,40 @@ class WatcherApp:
         # 股票列表变化时需要重建控件
         self._stock_widgets.clear()
         self._rebuild_layout()
+        self._update_group_label()
+
+    def _switch_group(self, new_idx):
+        wl = self.watchlist
+        groups = wl.get('groups', [])
+        if not groups or new_idx < 0 or new_idx >= len(groups):
+            return
+        wl['active_group'] = new_idx
+        self._stock_widgets.clear()
+        self._rebuild_layout()
+        self._update_group_label()
+        save_watchlist(wl)
+
+    def _prev_group(self):
+        wl = self.watchlist
+        groups = wl.get('groups', [])
+        idx = wl.get('active_group', 0)
+        new_idx = idx - 1 if idx > 0 else len(groups) - 1
+        self._switch_group(new_idx)
+
+    def _next_group(self):
+        wl = self.watchlist
+        groups = wl.get('groups', [])
+        idx = wl.get('active_group', 0)
+        new_idx = idx + 1 if idx < len(groups) - 1 else 0
+        self._switch_group(new_idx)
+
+    def _update_group_label(self):
+        if self.group_label is None:
+            return
+        groups = self.watchlist.get('groups', [])
+        idx = self.watchlist.get('active_group', 0)
+        if groups and idx < len(groups):
+            self.group_label.config(text=groups[idx]['name'])
 
     def _on_scroll(self, event):
         if platform.system() == 'Darwin':
