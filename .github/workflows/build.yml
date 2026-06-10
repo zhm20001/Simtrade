@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller pandas requests
+          pip install pyinstaller "pandas<3" requests
 
       - name: Prepare clean sample data
         run: |
