@@ -655,9 +655,12 @@ class WatcherApp:
         if not groups or new_idx < 0 or new_idx >= len(groups):
             return
         wl['active_group'] = new_idx
+        self.quotes = {}
+        self._prev_quotes = {}
         self._stock_widgets.clear()
         self._rebuild_layout()
         self._update_group_label()
+        self._refresh()
         save_watchlist(wl)
 
     def _prev_group(self):
