@@ -127,20 +127,25 @@ class SettingsWindow:
         self.win = tk.Toplevel(parent)
         self.win.title('设置')
         self.win.configure(bg=COLOR_BG)
+        self.win.geometry('340x520')
         self.win.resizable(True, True)
         self.win.grab_set()
         self.win.attributes('-topmost', True)
-        self.win.minsize(300, 400)
+        self.win.minsize(300, 450)
 
         wl = watcher_app.watchlist
         pad = {'padx': 12, 'pady': 4}
         entry_bg = '#404040'
 
+        # 用 Frame 分区：上方内容可滚动，下方按钮固定
+        main_frame = tk.Frame(self.win, bg=COLOR_BG)
+        main_frame.pack(fill='both', expand=True)
+
         # === 自选股列表 ===
-        tk.Label(self.win, text='自选股（最多10只）', bg=COLOR_BG, fg=COLOR_FG,
+        tk.Label(main_frame, text='自选股（最多10只）', bg=COLOR_BG, fg=COLOR_FG,
                  font=('Arial', 11, 'bold')).pack(anchor='w', **pad)
 
-        list_frame = tk.Frame(self.win, bg=COLOR_BG)
+        list_frame = tk.Frame(main_frame, bg=COLOR_BG)
         list_frame.pack(fill='x', **pad)
 
         self.stock_listbox = tk.Listbox(
@@ -159,14 +164,14 @@ class SettingsWindow:
         self.code_names = {}
         self._populate_list(wl['codes'])
 
-        btn_frame = tk.Frame(self.win, bg=COLOR_BG)
+        btn_frame = tk.Frame(main_frame, bg=COLOR_BG)
         btn_frame.pack(fill='x', **pad)
 
         ttk.Button(btn_frame, text='移除选中', command=self._remove_stock,
                    style='Flat.TButton').pack(side='left')
 
         # 添加输入
-        add_frame = tk.Frame(self.win, bg=COLOR_BG)
+        add_frame = tk.Frame(main_frame, bg=COLOR_BG)
         add_frame.pack(fill='x', **pad)
 
         tk.Label(add_frame, text='添加:', bg=COLOR_BG, fg=COLOR_FG,
@@ -180,10 +185,10 @@ class SettingsWindow:
                    style='Accent.TButton').pack(side='left')
 
         # === 显示字段 ===
-        tk.Label(self.win, text='显示字段', bg=COLOR_BG, fg=COLOR_FG,
+        tk.Label(main_frame, text='显示字段', bg=COLOR_BG, fg=COLOR_FG,
                  font=('Arial', 11, 'bold')).pack(anchor='w', **pad)
 
-        field_frame = tk.Frame(self.win, bg=COLOR_BG)
+        field_frame = tk.Frame(main_frame, bg=COLOR_BG)
         field_frame.pack(fill='x', **pad)
 
         self.field_vars = {}
@@ -198,7 +203,7 @@ class SettingsWindow:
                            font=('Arial', 10)).grid(row=i//2, column=i%2, sticky='w')
 
         # === 数值设置 ===
-        num_frame = tk.Frame(self.win, bg=COLOR_BG)
+        num_frame = tk.Frame(main_frame, bg=COLOR_BG)
         num_frame.pack(fill='x', **pad)
 
         self.refresh_var = tk.IntVar(value=wl['refresh_interval'])
@@ -234,9 +239,9 @@ class SettingsWindow:
                                       highlightthickness=1, highlightbackground='#555555')
         self.height_spin.pack(side='left', padx=5)
 
-        # === 保存/取消 ===
+        # === 保存/取消（固定底部）===
         action_frame = tk.Frame(self.win, bg=COLOR_BG)
-        action_frame.pack(fill='x', **pad, pady=(8, 12))
+        action_frame.pack(side='bottom', fill='x', padx=12, pady=(8, 12))
 
         ttk.Button(action_frame, text='保存', command=self._save,
                    style='Accent.TButton').pack(side='left', expand=True)
