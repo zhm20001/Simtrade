@@ -644,10 +644,11 @@ class WatcherApp:
     def apply_settings(self):
         self._apply_window_size()
         self.root.attributes('-alpha', self.watchlist.get('opacity', 0.95))
-        # 股票列表变化时需要重建控件
         self._stock_widgets.clear()
         self._rebuild_layout()
         self._update_group_label()
+        # 用已有数据立即填充，避免等待下次刷新
+        self._update_labels()
 
     def _switch_group(self, new_idx):
         wl = self.watchlist
@@ -811,9 +812,7 @@ class WatcherApp:
 
         if is_trading_hours():
             interval = self.watchlist.get('refresh_interval', 3) * 1000
-        else:
-            interval = 60000
-        self.root.after(interval, self._refresh)
+            self.root.after(interval, self._refresh)
 
     def _update_labels(self):
         """只更新文字和颜色，不销毁控件 — 消除闪烁"""
