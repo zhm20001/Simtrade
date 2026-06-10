@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""极简盯盘 — tkinter 置顶窗口，实时显示自选股行情"""
+"""极简盯盘 v0.5 — tkinter 置顶窗口，实时显示自选股行情"""
 
 import json
 import os
@@ -21,6 +21,7 @@ from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules
 
 WATCHLIST_PATH = os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
+VERSION = '0.5'
 
 DEFAULT_WATCHLIST = {
     'codes': [],
@@ -36,6 +37,7 @@ DEFAULT_WATCHLIST = {
     'window_height': None,
     'window_x': None,
     'window_y': None,
+    'opacity': 0.95,
 }
 
 # A股配色
@@ -59,7 +61,6 @@ def load_watchlist():
     if os.path.exists(WATCHLIST_PATH):
         with open(WATCHLIST_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        # 合并默认值
         result = dict(DEFAULT_WATCHLIST)
         result.update(data)
         if 'fields' in data:
@@ -83,7 +84,6 @@ def format_volume(vol):
 
 
 def send_notification(title, message):
-    """发送系统通知"""
     system = platform.system()
     try:
         if system == 'Darwin':
@@ -92,8 +92,6 @@ def send_notification(title, message):
                 f'display notification "{message}" with title "{title}"'
             ], timeout=5, capture_output=True)
         elif system == 'Windows':
-            # Windows 使用 tkinter 弹窗（避免额外依赖）
-            # 但在后台线程中不能操作 tkinter，所以用 ctypes
             try:
                 from ctypes import windll
                 windll.user32.MessageBoxTimeoutW(0, message, title, 0x40, 0, 3000)
@@ -104,7 +102,6 @@ def send_notification(title, message):
 
 
 def notify_triggered(triggered):
-    """策略触发通知，带防抖"""
     global _notify_timestamps
     now = time.time()
     for t in triggered:
@@ -125,17 +122,21 @@ class SettingsWindow:
     def __init__(self, parent, watcher_app):
         self.watcher = watcher_app
         self.win = tk.Toplevel(parent)
-        self.win.title('设置')
+        self.win.title(f'极简盯盘 v{VERSION}')
         self.win.configure(bg=COLOR_BG)
-        self.win.geometry('340x520')
+        self.win.geometry('340x580')
         self.win.resizable(True, True)
         self.win.grab_set()
         self.win.attributes('-topmost', True)
-        self.win.minsize(300, 450)
+        self.win.minsize(300, 500)
 
         wl = watcher_app.watchlist
         pad = {'padx': 12, 'pady': 4}
         entry_bg = '#404040'
+
+        # 版本号
+        tk.Label(self.win, text=f'v{VERSION}', bg=COLOR_BG, fg=COLOR_DIM,
+                 font=('Consolas', 9)).pack(anchor='e', padx=12, pady=(6, 0))
 
         # 用 Frame 分区：上方内容可滚动，下方按钮固定
         main_frame = tk.Frame(self.win, bg=COLOR_BG)
@@ -160,7 +161,6 @@ class SettingsWindow:
         scrollbar.pack(side='right', fill='y')
         self.stock_listbox.config(yscrollcommand=scrollbar.set)
 
-        # 股票名称映射
         self.code_names = {}
         self._populate_list(wl['codes'])
 
@@ -209,6 +209,7 @@ class SettingsWindow:
         self.refresh_var = tk.IntVar(value=wl['refresh_interval'])
         self.font_var = tk.IntVar(value=wl['font_size'])
         self.width_var = tk.IntVar(value=wl['window_width'])
+        self.opacity_var = tk.DoubleVar(value=wl.get('opacity', 0.95))
         self.auto_height_var = tk.BooleanVar(value=wl['window_height'] is None)
         self.height_var = tk.IntVar(value=wl['window_height'] or 400)
 
@@ -226,8 +227,22 @@ class SettingsWindow:
                        highlightthickness=1, highlightbackground='#555555'
                        ).grid(row=i, column=1, sticky='w', padx=5, pady=2)
 
+        # 透明度滑块
+        opacity_row = len(nums)
+        tk.Label(num_frame, text='背景透明度:', bg=COLOR_BG, fg=COLOR_FG,
+                 font=('Arial', 10)).grid(row=opacity_row, column=0, sticky='w', pady=2)
+        self.opacity_label = tk.Label(num_frame, text=f'{self.opacity_var.get():.0%}',
+                                       bg=COLOR_BG, fg=COLOR_ACCENT, font=('Consolas', 10))
+        self.opacity_label.grid(row=opacity_row, column=1, sticky='w', padx=5, pady=2)
+        opacity_scale = tk.Scale(num_frame, from_=0.3, to=1.0, resolution=0.05,
+                                  orient='horizontal', variable=self.opacity_var,
+                                  bg=COLOR_BG, fg=COLOR_FG, troughcolor=entry_bg,
+                                  highlightthickness=0, showvalue=False, length=120,
+                                  command=lambda v: self.opacity_label.config(text=f'{float(v):.0%}'))
+        opacity_scale.grid(row=opacity_row + 1, column=0, columnspan=2, sticky='w', padx=0, pady=0)
+
         height_frame = tk.Frame(num_frame, bg=COLOR_BG)
-        height_frame.grid(row=len(nums), column=0, columnspan=2, sticky='w', pady=2)
+        height_frame.grid(row=opacity_row + 2, column=0, columnspan=2, sticky='w', pady=2)
         tk.Checkbutton(height_frame, text='手动高度:', variable=self.auto_height_var,
                        bg=COLOR_BG, fg=COLOR_FG, selectcolor=entry_bg,
                        activebackground=COLOR_BG, activeforeground=COLOR_FG,
@@ -266,7 +281,6 @@ class SettingsWindow:
         if code in self.code_names:
             messagebox.showinfo('提示', '已存在', parent=self.win)
             return
-        # 验证代码
         try:
             name = get_stock_name(code)
             if name == code:
@@ -298,6 +312,7 @@ class SettingsWindow:
             'font_size': self.font_var.get(),
             'window_width': self.width_var.get(),
             'window_height': None if not self.auto_height_var.get() else self.height_var.get(),
+            'opacity': round(self.opacity_var.get(), 2),
         }
         save_watchlist(wl)
         self.watcher.watchlist = wl
@@ -309,7 +324,6 @@ class WatcherApp:
     """极简盯盘主应用"""
 
     def _setup_styles(self):
-        """配置 ttk 样式（macOS 兼容）"""
         style = ttk.Style()
         style.theme_use('clam')
         style.configure('Toolbar.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
@@ -334,21 +348,19 @@ class WatcherApp:
         self._prev_quotes = {}
         self._running = True
         self._resize_after_id = None
+        # 缓存已创建的控件，避免重建导致闪烁
+        self._stock_widgets = {}  # code -> {row1_name, row1_code, row2_price, row2_change, row3, row4}
 
-        # 主窗口 — 普通窗口（可缩放、Dock 可恢复）
         self.root = tk.Tk()
-        self.root.title('极简盯盘')
+        self.root.title(f'极简盯盘 v{VERSION}')
         self.root.configure(bg=COLOR_BG)
 
-        # 配置样式
         self._setup_styles()
         self.root.resizable(True, True)
         self.root.minsize(200, 100)
-
-        # 置顶
         self.root.attributes('-topmost', True)
+        self.root.attributes('-alpha', self.watchlist.get('opacity', 0.95))
 
-        # 窗口大小和位置
         self._apply_window_size()
 
         # 工具栏
@@ -356,7 +368,7 @@ class WatcherApp:
         toolbar.pack(fill='x')
         toolbar.pack_propagate(False)
 
-        tk.Label(toolbar, text=' 自选股行情', bg=COLOR_TITLE, fg=COLOR_FG,
+        tk.Label(toolbar, text=f' 自选股行情 v{VERSION}', bg=COLOR_TITLE, fg=COLOR_FG,
                  font=('Arial', 11, 'bold')).pack(side='left', padx=4)
 
         ttk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
@@ -383,17 +395,11 @@ class WatcherApp:
         self.canvas.bind('<Enter>', lambda e: self.canvas.bind_all('<MouseWheel>', self._on_scroll))
         self.canvas.bind('<Leave>', lambda e: self.canvas.unbind_all('<MouseWheel>'))
 
-        # 窗口大小变更保存
         self.root.bind('<Configure>', self._on_resize)
 
-        # 系统托盘
-        self._setup_tray()
-
-        # 无自选股时自动弹出设置
         if not self.watchlist['codes']:
             self.root.after(500, self._open_settings)
 
-        # 开始刷新
         self.root.after(100, self._refresh)
 
     def _apply_window_size(self):
@@ -423,9 +429,11 @@ class WatcherApp:
         return base + extra * int(fs * 1.4)
 
     def apply_settings(self):
-        """设置保存后调用，重新渲染"""
         self._apply_window_size()
-        self._render_quotes()
+        self.root.attributes('-alpha', self.watchlist.get('opacity', 0.95))
+        # 股票列表变化时需要重建控件
+        self._stock_widgets.clear()
+        self._rebuild_layout()
 
     def _on_scroll(self, event):
         if platform.system() == 'Darwin':
@@ -436,7 +444,6 @@ class WatcherApp:
     def _on_resize(self, event):
         if event.widget != self.root:
             return
-        # 防抖：500ms 后才保存
         if self._resize_after_id:
             self.root.after_cancel(self._resize_after_id)
         self._resize_after_id = self.root.after(500, self._save_window_size)
@@ -455,54 +462,20 @@ class WatcherApp:
 
     def _quit(self):
         self._running = False
-        # 保存窗口位置
         try:
             save_watchlist(self.watchlist)
         except Exception:
             pass
         self.root.destroy()
 
-    def _setup_tray(self):
-        """系统托盘（简化版，使用 tkinter 菜单模拟）"""
-        # macOS 菜单栏停靠
-        # Windows 系统托盘需要 pystray，这里用简化方案：
-        # 最小化后通过 Dock/任务栏图标恢复
-        pass
-
-    def _refresh(self):
-        """定时刷新行情"""
-        if not self._running:
-            return
-        codes = self.watchlist.get('codes', [])
-        if codes:
-            try:
-                batch = get_batch_realtime_prices(codes)
-                self._prev_quotes = dict(self.quotes)
-                self.quotes = batch
-                self._render_quotes()
-
-                # 检查策略
-                strategy = load_strategy()
-                if strategy.get('rules'):
-                    triggered = check_rules(strategy['rules'], batch)
-                    if triggered:
-                        notify_triggered(triggered)
-            except Exception:
-                # 网络错误：保留上次数据，下次重试
-                pass
-
-        interval = self.watchlist.get('refresh_interval', 3) * 1000
-        self.root.after(interval, self._refresh)
-
-    def _render_quotes(self):
-        """渲染行情到界面"""
+    def _rebuild_layout(self):
+        """重建整个布局（仅股票列表变化时调用）"""
         for widget in self.scrollable.winfo_children():
             widget.destroy()
+        self._stock_widgets.clear()
 
         codes = self.watchlist.get('codes', [])
         fs = self.watchlist.get('font_size', 13)
-        fields = self.watchlist.get('fields', {})
-        w = self.watchlist.get('window_width', 320) - 20
 
         if not codes:
             tk.Label(self.scrollable, text='暂无自选股\n点击 ⚙ 添加',
@@ -511,14 +484,96 @@ class WatcherApp:
             return
 
         for code in codes:
+            frame = tk.Frame(self.scrollable, bg=COLOR_BG_ROW)
+            frame.pack(fill='x', padx=5, pady=2)
+
+            row1 = tk.Frame(frame, bg=COLOR_BG_ROW)
+            row1.pack(fill='x', padx=8, pady=(6, 0))
+            lbl_name = tk.Label(row1, text='', bg=COLOR_BG_ROW, fg=COLOR_FG,
+                                font=('Arial', fs, 'bold'), anchor='w')
+            lbl_name.pack(side='left')
+            lbl_code = tk.Label(row1, text=code, bg=COLOR_BG_ROW, fg=COLOR_DIM,
+                                font=('Consolas', fs - 2), anchor='e')
+            lbl_code.pack(side='right')
+
+            row2 = tk.Frame(frame, bg=COLOR_BG_ROW)
+            row2.pack(fill='x', padx=8)
+            lbl_price = tk.Label(row2, text='', bg=COLOR_BG_ROW, fg=COLOR_FLAT,
+                                 font=('Consolas', fs + 2, 'bold'), anchor='w')
+            lbl_price.pack(side='left')
+            lbl_change = tk.Label(row2, text='', bg=COLOR_BG_ROW, fg=COLOR_FLAT,
+                                  font=('Consolas', fs), anchor='e')
+            lbl_change.pack(side='right')
+
+            # 第三行：量/额
+            row3 = tk.Frame(frame, bg=COLOR_BG_ROW)
+            row3.pack(fill='x', padx=8)
+            lbl_extra1 = tk.Label(row3, text='', bg=COLOR_BG_ROW, fg=COLOR_DIM,
+                                  font=('Consolas', fs - 2), anchor='w')
+            lbl_extra1.pack(fill='x')
+
+            # 第四行：高/低/换
+            row4 = tk.Frame(frame, bg=COLOR_BG_ROW)
+            row4.pack(fill='x', padx=8, pady=(0, 6))
+            lbl_extra2 = tk.Label(row4, text='', bg=COLOR_BG_ROW, fg=COLOR_DIM,
+                                  font=('Consolas', fs - 2), anchor='w')
+            lbl_extra2.pack(fill='x')
+
+            self._stock_widgets[code] = {
+                'frame': frame,
+                'name': lbl_name,
+                'code': lbl_code,
+                'price': lbl_price,
+                'change': lbl_change,
+                'extra1': lbl_extra1,
+                'extra2': lbl_extra2,
+            }
+
+    def _refresh(self):
+        if not self._running:
+            return
+        codes = self.watchlist.get('codes', [])
+        if codes:
+            try:
+                batch = get_batch_realtime_prices(codes)
+                self._prev_quotes = dict(self.quotes)
+                self.quotes = batch
+                self._update_labels()
+
+                strategy = load_strategy()
+                if strategy.get('rules'):
+                    triggered = check_rules(strategy['rules'], batch)
+                    if triggered:
+                        notify_triggered(triggered)
+            except Exception:
+                pass
+
+        interval = self.watchlist.get('refresh_interval', 3) * 1000
+        self.root.after(interval, self._refresh)
+
+    def _update_labels(self):
+        """只更新文字和颜色，不销毁控件 — 消除闪烁"""
+        codes = self.watchlist.get('codes', [])
+        fields = self.watchlist.get('fields', {})
+        fs = self.watchlist.get('font_size', 13)
+
+        # 如果股票列表变化了（或首次），重建布局
+        current_codes = set(self._stock_widgets.keys())
+        if current_codes != set(codes):
+            self._rebuild_layout()
+
+        for code in codes:
+            w = self._stock_widgets.get(code)
+            if not w:
+                continue
+
             quote = self.quotes.get(code)
             if not quote:
-                # 尚未获取到数据
-                frame = tk.Frame(self.scrollable, bg=COLOR_BG_ROW)
-                frame.pack(fill='x', padx=5, pady=2)
-                tk.Label(frame, text=f'{code}  加载中...', bg=COLOR_BG_ROW,
-                         fg=COLOR_DIM, font=('Consolas', fs), anchor='w'
-                         ).pack(fill='x', padx=8, pady=4)
+                w['name'].config(text=f'{code} 加载中...')
+                w['price'].config(text='')
+                w['change'].config(text='')
+                w['extra1'].config(text='')
+                w['extra2'].config(text='')
                 continue
 
             price = quote.get('price', 0)
@@ -526,7 +581,6 @@ class WatcherApp:
             change = quote.get('change', 0)
             change_pct = quote.get('change_pct', 0)
 
-            # 判断涨跌
             if change > 0:
                 color = COLOR_UP
                 arrow = '▲'
@@ -540,62 +594,24 @@ class WatcherApp:
                 arrow = '─'
                 sign = ''
 
-            # 是否有上次价格用于判断是否过期
-            is_stale = code not in self.quotes and code in self._prev_quotes
+            w['name'].config(text=name)
+            w['price'].config(text=f'{price:.2f}', fg=color)
+            w['change'].config(text=f'{arrow} {sign}{change:.2f} ({sign}{change_pct:.2f}%)', fg=color)
 
-            frame = tk.Frame(self.scrollable, bg=COLOR_BG_ROW)
-            frame.pack(fill='x', padx=5, pady=2)
-
-            # 第一行：名称 + 代码
-            row1 = tk.Frame(frame, bg=COLOR_BG_ROW)
-            row1.pack(fill='x', padx=8, pady=(6, 0))
-            tk.Label(row1, text=name, bg=COLOR_BG_ROW, fg=COLOR_FG,
-                     font=('Arial', fs, 'bold'), anchor='w').pack(side='left')
-            tk.Label(row1, text=code, bg=COLOR_BG_ROW, fg=COLOR_DIM,
-                     font=('Consolas', fs - 2), anchor='e').pack(side='right')
-
-            # 第二行：价格 + 涨跌
-            row2 = tk.Frame(frame, bg=COLOR_BG_ROW)
-            row2.pack(fill='x', padx=8)
-            price_fg = COLOR_DIM if is_stale else color
-            tk.Label(row2, text=f'{price:.2f}', bg=COLOR_BG_ROW, fg=price_fg,
-                     font=('Consolas', fs + 2, 'bold'), anchor='w').pack(side='left')
-            tk.Label(row2, text=f'{arrow} {sign}{change:.2f} ({sign}{change_pct:.2f}%)',
-                     bg=COLOR_BG_ROW, fg=price_fg,
-                     font=('Consolas', fs), anchor='e').pack(side='right')
-
-            # 可选字段行
-            extra_parts = []
+            # 可选字段
+            extra1_parts = []
             if fields.get('volume') and quote.get('volume'):
-                vol = quote['volume']
-                extra_parts.append(f'量:{format_volume(vol)}手')
+                extra1_parts.append(f'量:{format_volume(quote["volume"])}手')
             if fields.get('amount') and quote.get('amount'):
-                extra_parts.append(f'额:{format_volume(quote["amount"])}')
+                extra1_parts.append(f'额:{format_volume(quote["amount"])}')
+            w['extra1'].config(text='  '.join(extra1_parts))
 
-            if extra_parts:
-                row3 = tk.Frame(frame, bg=COLOR_BG_ROW)
-                row3.pack(fill='x', padx=8)
-                tk.Label(row3, text='  '.join(extra_parts), bg=COLOR_BG_ROW,
-                         fg=COLOR_DIM, font=('Consolas', fs - 2),
-                         anchor='w').pack(fill='x')
-
-            extra_parts2 = []
+            extra2_parts = []
             if fields.get('high_low'):
-                hi = quote.get('high', price)
-                lo = quote.get('low', price)
-                extra_parts2.append(f'高:{hi:.2f} 低:{lo:.2f}')
+                extra2_parts.append(f'高:{quote.get("high", price):.2f} 低:{quote.get("low", price):.2f}')
             if fields.get('turnover') and quote.get('turnover'):
-                extra_parts2.append(f'换:{quote["turnover"]:.2f}%')
-
-            if extra_parts2:
-                row4 = tk.Frame(frame, bg=COLOR_BG_ROW)
-                row4.pack(fill='x', padx=8, pady=(0, 6))
-                tk.Label(row4, text='  '.join(extra_parts2), bg=COLOR_BG_ROW,
-                         fg=COLOR_DIM, font=('Consolas', fs - 2),
-                         anchor='w').pack(fill='x')
-
-        # 分隔线（最后一条不需要）
-        # 用 pady=2 的 frame gap 代替
+                extra2_parts.append(f'换:{quote["turnover"]:.2f}%')
+            w['extra2'].config(text='  '.join(extra2_parts))
 
     def run(self):
         self.root.mainloop()
