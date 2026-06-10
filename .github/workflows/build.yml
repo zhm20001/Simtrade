@@ -9,17 +9,27 @@ on:
       - 'assets/**'
       - 'watcher.spec'
       - '.github/workflows/build.yml'
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            suffix: win64
+          - arch: x86
+            suffix: win32
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          architecture: ${{ matrix.arch }}
 
       - name: Install dependencies
         run: |
@@ -45,9 +55,31 @@ jobs:
         run: |
           pyinstaller watcher.spec
 
+      - name: Package as zip
+        run: |
+          Compress-Archive -Path "dist/极简盯盘/*" -DestinationPath "极简盯盘-${{ matrix.suffix }}.zip"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: watcher-windows
-          path: dist/极简盯盘/
+          name: watcher-${{ matrix.suffix }}
+          path: 极简盯盘-${{ matrix.suffix }}.zip
           retention-days: 30
+
+  release:
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*.zip
