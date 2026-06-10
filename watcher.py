@@ -304,38 +304,29 @@ class SettingsWindow:
         self.watcher.apply_settings()
         self.win.destroy()
 
-IS_MACOS = platform.system() == 'Darwin'
-
 
 class WatcherApp:
     """极简盯盘主应用"""
 
     def _setup_styles(self):
-        """配置 ttk 样式"""
+        """配置 ttk 样式（macOS 兼容）"""
         style = ttk.Style()
-        if IS_MACOS:
-            # macOS: 原生 aqua 主题，按钮交给系统渲染
-            style.configure('Accent.TButton', padding=(16, 6))
-            style.configure('Flat.TButton', padding=(16, 6))
-            style.configure('Toolbar.TButton', padding=(8, 2))
-        else:
-            # Windows/Linux: clam 主题自定义颜色
-            style.theme_use('clam')
-            style.configure('Toolbar.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
-                             borderwidth=0, focusthickness=0, padding=(8, 4))
-            style.map('Toolbar.TButton',
-                       background=[('active', COLOR_ACCENT)],
-                       foreground=[('active', 'white')])
-            style.configure('Accent.TButton', background=COLOR_ACCENT, foreground='white',
-                             borderwidth=0, focusthickness=0, padding=(20, 6))
-            style.map('Accent.TButton',
-                       background=[('active', '#005a9e')],
-                       foreground=[('active', 'white')])
-            style.configure('Flat.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
-                             borderwidth=0, focusthickness=0, padding=(20, 6))
-            style.map('Flat.TButton',
-                       background=[('active', '#555555')],
-                       foreground=[('active', 'white')])
+        style.theme_use('clam')
+        style.configure('Toolbar.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
+                         borderwidth=0, focusthickness=0, padding=(8, 4))
+        style.map('Toolbar.TButton',
+                   background=[('active', COLOR_ACCENT)],
+                   foreground=[('active', 'white')])
+        style.configure('Accent.TButton', background=COLOR_ACCENT, foreground='white',
+                         borderwidth=0, focusthickness=0, padding=(20, 6))
+        style.map('Accent.TButton',
+                   background=[('active', '#005a9e')],
+                   foreground=[('active', 'white')])
+        style.configure('Flat.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
+                         borderwidth=0, focusthickness=0, padding=(20, 6))
+        style.map('Flat.TButton',
+                   background=[('active', '#555555')],
+                   foreground=[('active', 'white')])
 
     def __init__(self):
         self.watchlist = load_watchlist()
@@ -344,26 +335,20 @@ class WatcherApp:
         self._running = True
         self._resize_after_id = None
 
-        # 主窗口
+        # 主窗口 — 普通窗口（可缩放、Dock 可恢复）
         self.root = tk.Tk()
         self.root.title('极简盯盘')
         self.root.configure(bg=COLOR_BG)
 
+        # 配置样式
         self._setup_styles()
         self.root.resizable(True, True)
         self.root.minsize(200, 100)
+
+        # 置顶
         self.root.attributes('-topmost', True)
 
-        # === 平台分支：窗口装饰 ===
-        if IS_MACOS:
-            # macOS utility: 小标题栏 + 红黄绿按钮 + Dock 可恢复
-            try:
-                self.root.tk.call('::tk::unsupported::MacWindowStyle', 'style',
-                                  self.root._w, 'utility', 'closeBox collapseBox resizable')
-            except Exception:
-                pass
-        # Windows: 标准窗口，topmost + resizable 已足够
-
+        # 窗口大小和位置
         self._apply_window_size()
 
         # 工具栏
