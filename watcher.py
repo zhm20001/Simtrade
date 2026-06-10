@@ -785,27 +785,28 @@ class WatcherApp:
         if not self._running:
             return
 
-        if is_trading_hours():
-            codes = get_active_codes(self.watchlist)
-            if codes:
-                try:
-                    batch = get_batch_realtime_prices(codes)
-                    self._prev_quotes = dict(self.quotes)
-                    self.quotes = batch
-                    self.positions = load_positions()
-                    self._update_labels()
+        codes = get_active_codes(self.watchlist)
+        if codes:
+            try:
+                batch = get_batch_realtime_prices(codes)
+                self._prev_quotes = dict(self.quotes)
+                self.quotes = batch
+                self.positions = load_positions()
+                self._update_labels()
 
+                if is_trading_hours():
                     strategy = load_strategy()
                     if strategy.get('rules'):
                         triggered = check_rules(strategy['rules'], batch)
                         if triggered:
                             notify_triggered(triggered, strategy['rules'], batch)
-                except Exception:
-                    pass
+            except Exception:
+                pass
+
+        if is_trading_hours():
             interval = self.watchlist.get('refresh_interval', 3) * 1000
         else:
-            # 非交易时段不请求，但保留定时器以便盘中自动恢复
-            interval = 30000
+            interval = 60000
         self.root.after(interval, self._refresh)
 
     def _update_labels(self):
