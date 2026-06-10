@@ -2,15 +2,31 @@
 
 import csv
 import datetime
-import fcntl
 import json
 import os
+import sys
+
+if sys.platform != 'win32':
+    import fcntl
 
 from core.config import (
     load_config, ensure_data_dir, DEFAULT_CONFIG,
     PORTFOLIO_PATH, TRADES_PATH, STRATEGY_PATH,
 )
 from core.market import get_stock_name, get_realtime_price, get_batch_realtime_prices
+
+
+def _flock(f, exclusive=True):
+    if sys.platform == 'win32':
+        return
+    op = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    fcntl.flock(f, op)
+
+
+def _funlock(f):
+    if sys.platform == 'win32':
+        return
+    fcntl.flock(f, fcntl.LOCK_UN)
 
 
 # --- 交易时段 ---
@@ -67,9 +83,9 @@ def save_portfolio(portfolio):
     # round cash
     portfolio['cash'] = round(portfolio['cash'], 2)
     with open(PORTFOLIO_PATH, 'w', encoding='utf-8') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        _flock(f)
         json.dump(portfolio, f, ensure_ascii=False, indent=2)
-        fcntl.flock(f, fcntl.LOCK_UN)
+        _funlock(f)
 
 
 def append_trade(trade_record):
@@ -77,7 +93,7 @@ def append_trade(trade_record):
     ensure_data_dir()
     file_exists = os.path.exists(TRADES_PATH) and os.path.getsize(TRADES_PATH) > 0
     with open(TRADES_PATH, 'a', newline='', encoding='utf-8') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        _flock(f)
         writer = csv.DictWriter(f, fieldnames=[
             'timestamp', 'action', 'code', 'name', 'price', 'qty',
             'amount', 'commission', 'cash_after', 'reason'
@@ -85,7 +101,7 @@ def append_trade(trade_record):
         if not file_exists:
             writer.writeheader()
         writer.writerow(trade_record)
-        fcntl.flock(f, fcntl.LOCK_UN)
+        _funlock(f)
 
 
 def load_trades():
