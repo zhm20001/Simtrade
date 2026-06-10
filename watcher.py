@@ -78,6 +78,12 @@ def load_watchlist():
     return dict(DEFAULT_WATCHLIST)
 
 
+def save_watchlist(wl):
+    ensure_data_dir()
+    with open(WATCHLIST_PATH, 'w', encoding='utf-8') as f:
+        json.dump(wl, f, ensure_ascii=False, indent=2)
+
+
 def get_active_codes(wl):
     """获取当前活动分组的股票代码列表"""
     groups = wl.get('groups', [])
