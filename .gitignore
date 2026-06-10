@@ -4,3 +4,7 @@ __pycache__/
 .DS_Store
 build/
 dist/
+docs/
+TODO.md
+极简盯盘.spec
+assets/icon.iconset/
