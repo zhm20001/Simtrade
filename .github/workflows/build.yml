@@ -26,44 +26,20 @@ jobs:
           pip install pyinstaller pandas requests
 
       - name: Prepare clean sample data
-        shell: bash
         run: |
-          cat > data/watchlist.json << 'EOF'
-          {
-            "groups": [
-              {
-                "name": "示例",
-                "codes": ["sh600519", "sz000858", "sh600900", "sh600011"]
-              }
-            ],
-            "active_group": 0,
-            "fields": {
-              "volume": true,
-              "high_low": true,
-              "turnover": true,
-              "amount": false
-            },
-            "refresh_interval": 3,
-            "font_size": 13,
-            "window_width": 320,
-            "window_height": null,
-            "opacity": 0.95
-          }
-          EOF
-          cat > data/portfolio.json << 'EOF'
-          {
-            "account_id": "sim_001",
-            "cash": 1000000.0,
-            "positions": {},
-            "initial_cash": 1000000.0,
-            "created_at": "",
-            "updated_at": ""
-          }
-          EOF
-          cat > data/strategy.json << 'EOF'
-          {"rules": []}
-          EOF
-          echo '{}' > data/stock_names.json
+          python -c "
+          import json, os
+          os.makedirs('data', exist_ok=True)
+          with open('data/watchlist.json','w',encoding='utf-8') as f:
+              json.dump({'groups':[{'name':'示例','codes':['sh600519','sz000858','sh600900','sh600011']}],'active_group':0,'fields':{'volume':True,'high_low':True,'turnover':True,'amount':False},'refresh_interval':3,'font_size':13,'window_width':320,'window_height':None,'opacity':0.95}, f, ensure_ascii=False, indent=2)
+          with open('data/portfolio.json','w',encoding='utf-8') as f:
+              json.dump({'account_id':'sim_001','cash':1000000.0,'positions':{},'initial_cash':1000000.0,'created_at':'','updated_at':''}, f, ensure_ascii=False, indent=2)
+          with open('data/strategy.json','w',encoding='utf-8') as f:
+              json.dump({'rules':[]}, f, ensure_ascii=False, indent=2)
+          with open('data/stock_names.json','w',encoding='utf-8') as f:
+              json.dump({}, f)
+          print('Sample data ready')
+          "
 
       - name: Build EXE
         run: |
