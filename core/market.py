@@ -4,7 +4,6 @@ import datetime
 import json
 import os
 
-import pandas as pd
 import requests
 
 from core.config import load_config, ensure_data_dir, NAMES_PATH
@@ -81,13 +80,17 @@ def get_price_day_tx(code, end_date='', count=10, frequency='1d'):
     ms = 'qfq' + unit
     stk = st['data'][code]
     buf = stk[ms] if ms in stk else stk[unit]
-    df = pd.DataFrame(buf)
-    df.columns = ['time', 'open', 'close', 'high', 'low', 'volume']
-    df[['open', 'close', 'high', 'low', 'volume']] = df[['open', 'close', 'high', 'low', 'volume']].astype('float')
-    df.time = pd.to_datetime(df.time)
-    df.set_index(['time'], inplace=True)
-    df.index.name = ''
-    return df
+    rows = []
+    for r in buf:
+        rows.append({
+            'time': r[0],
+            'open': float(r[1]),
+            'close': float(r[2]),
+            'high': float(r[3]),
+            'low': float(r[4]),
+            'volume': float(r[5]),
+        })
+    return rows
 
 
 def get_price_min_tx(code, end_date=None, count=10, frequency='1d'):
@@ -98,15 +101,19 @@ def get_price_min_tx(code, end_date=None, count=10, frequency='1d'):
     timeout = load_config().get('request_timeout', 3)
     st = json.loads(requests.get(URL, timeout=timeout).content)
     buf = st['data'][code]['m' + str(ts)]
-    df = pd.DataFrame(buf, columns=['time', 'open', 'close', 'high', 'low', 'volume', 'n1', 'n2'])
-    df = df[['time', 'open', 'close', 'high', 'low', 'volume']]
-    df[['open', 'close', 'high', 'low', 'volume']] = df[['open', 'close', 'high', 'low', 'volume']].astype('float')
-    df.time = pd.to_datetime(df.time)
-    df.set_index(['time'], inplace=True)
-    df.index.name = ''
+    rows = []
+    for r in buf:
+        rows.append({
+            'time': r[0],
+            'open': float(r[1]),
+            'close': float(r[2]),
+            'high': float(r[3]),
+            'low': float(r[4]),
+            'volume': float(r[5]),
+        })
     if 'qt' in st['data'][code] and code in st['data'][code]['qt']:
-        df.iloc[-1, df.columns.get_loc('close')] = float(st['data'][code]['qt'][code][3])
-    return df
+        rows[-1]['close'] = float(st['data'][code]['qt'][code][3])
+    return rows
 
 
 def get_price_sina(code, end_date='', count=10, frequency='60m'):
@@ -114,27 +121,32 @@ def get_price_sina(code, end_date='', count=10, frequency='60m'):
     mcount = count
     ts = int(frequency[:-1]) if frequency[:-1].isdigit() else 1
     if (end_date != '') & (frequency in ['240m', '1200m', '7200m']):
-        end_date = pd.to_datetime(end_date) if not isinstance(end_date, datetime.date) else end_date
+        if not isinstance(end_date, datetime.date):
+            end_date = datetime.datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d').date()
         unit = 4 if frequency == '1200m' else 29 if frequency == '7200m' else 1
-        count = count + (datetime.datetime.now() - end_date).days // unit
+        count = count + (datetime.datetime.now().date() - end_date).days // unit
     URL = f'http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={code}&scale={ts}&ma=5&datalen={count}'
     timeout = load_config().get('request_timeout', 3)
     r = requests.get(URL, timeout=timeout)
     dstr = json.loads(r.content.decode('gbk', errors='ignore'))
-    df = pd.DataFrame(dstr)
-    if 'day' in df.columns:
-        df['open'] = df['open'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['close'] = df['close'].astype(float)
-        df['volume'] = df['volume'].astype(float)
-        df.day = pd.to_datetime(df.day)
-        df.set_index(['day'], inplace=True)
-        df.index.name = ''
+    if dstr and isinstance(dstr, list) and len(dstr) > 0 and 'day' in dstr[0]:
+        rows = []
+        for item in dstr:
+            rows.append({
+                'time': item['day'],
+                'open': float(item['open']),
+                'high': float(item['high']),
+                'low': float(item['low']),
+                'close': float(item['close']),
+                'volume': float(item['volume']),
+            })
         if (end_date != '') & (frequency in ['240m', '1200m', '7200m']):
-            return df[df.index <= end_date][-mcount:]
-        return df
-    return pd.DataFrame()
+            if not isinstance(end_date, datetime.date):
+                end_date = datetime.datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d').date()
+            rows = [r for r in rows if r['time'][:10] <= str(end_date)]
+            rows = rows[-mcount:]
+        return rows
+    return []
 
 
 def get_price(code, end_date='', count=10, frequency='1d'):
@@ -165,7 +177,7 @@ def get_realtime_price(code):
     df = get_price(code, frequency='1m', count=1)
     if df is None or len(df) == 0:
         raise ValueError(f'无法获取 {code} 的行情数据')
-    return float(df.iloc[-1]['close'])
+    return float(df[-1]['close'])
 
 
 def get_batch_realtime_prices(codes):
