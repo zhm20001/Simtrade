@@ -6,8 +6,6 @@ import fcntl
 import json
 import os
 
-import pandas as pd
-
 from core.config import (
     load_config, ensure_data_dir, DEFAULT_CONFIG,
     PORTFOLIO_PATH, TRADES_PATH, STRATEGY_PATH,
@@ -95,10 +93,26 @@ def load_trades():
     if not os.path.exists(TRADES_PATH):
         return []
     try:
-        df = pd.read_csv(TRADES_PATH, encoding='utf-8')
-        return df.to_dict('records')
+        with open(TRADES_PATH, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            return [
+                {k: _auto_convert(v) for k, v in row.items()}
+                for row in reader
+            ]
     except Exception:
         return []
+
+
+def _auto_convert(val):
+    """CSV 读出的是字符串，尝试转数值类型"""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return val
 
 
 def require_portfolio():
