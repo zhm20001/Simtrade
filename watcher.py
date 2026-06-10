@@ -127,9 +127,10 @@ class SettingsWindow:
         self.win = tk.Toplevel(parent)
         self.win.title('设置')
         self.win.configure(bg=COLOR_BG)
-        self.win.resizable(False, False)
+        self.win.resizable(True, True)
         self.win.grab_set()
         self.win.attributes('-topmost', True)
+        self.win.minsize(300, 400)
 
         wl = watcher_app.watchlist
         pad = {'padx': 12, 'pady': 4}
@@ -161,10 +162,8 @@ class SettingsWindow:
         btn_frame = tk.Frame(self.win, bg=COLOR_BG)
         btn_frame.pack(fill='x', **pad)
 
-        tk.Button(btn_frame, text='移除选中', command=self._remove_stock,
-                  bg=COLOR_BTN, fg=COLOR_BTN_FG, relief='flat',
-                  activebackground=COLOR_ACCENT, activeforeground='white',
-                  cursor='hand2', font=('Arial', 10)).pack(side='left')
+        ttk.Button(btn_frame, text='移除选中', command=self._remove_stock,
+                   style='Flat.TButton').pack(side='left')
 
         # 添加输入
         add_frame = tk.Frame(self.win, bg=COLOR_BG)
@@ -177,10 +176,8 @@ class SettingsWindow:
                                   relief='flat', highlightthickness=1,
                                   highlightbackground='#555555')
         self.add_entry.pack(side='left', padx=5)
-        tk.Button(add_frame, text='+', command=self._add_stock,
-                  bg=COLOR_ACCENT, fg='white', relief='flat',
-                  activebackground='#005a9e', activeforeground='white',
-                  cursor='hand2', font=('Arial', 12, 'bold'), width=3).pack(side='left')
+        ttk.Button(add_frame, text='+', command=self._add_stock,
+                   style='Accent.TButton').pack(side='left')
 
         # === 显示字段 ===
         tk.Label(self.win, text='显示字段', bg=COLOR_BG, fg=COLOR_FG,
@@ -241,16 +238,10 @@ class SettingsWindow:
         action_frame = tk.Frame(self.win, bg=COLOR_BG)
         action_frame.pack(fill='x', **pad, pady=(8, 12))
 
-        tk.Button(action_frame, text='保存', command=self._save,
-                  bg=COLOR_ACCENT, fg='white', relief='flat',
-                  activebackground='#005a9e', activeforeground='white',
-                  cursor='hand2', font=('Arial', 11, 'bold'), width=10
-                  ).pack(side='left', expand=True)
-        tk.Button(action_frame, text='取消', command=self.win.destroy,
-                  bg=COLOR_BTN, fg=COLOR_BTN_FG, relief='flat',
-                  activebackground='#555555', activeforeground='white',
-                  cursor='hand2', font=('Arial', 11), width=10
-                  ).pack(side='left', expand=True)
+        ttk.Button(action_frame, text='保存', command=self._save,
+                   style='Accent.TButton').pack(side='left', expand=True)
+        ttk.Button(action_frame, text='取消', command=self.win.destroy,
+                   style='Flat.TButton').pack(side='left', expand=True)
 
     def _populate_list(self, codes):
         self.stock_listbox.delete(0, tk.END)
@@ -312,6 +303,26 @@ class SettingsWindow:
 class WatcherApp:
     """极简盯盘主应用"""
 
+    def _setup_styles(self):
+        """配置 ttk 样式（macOS 兼容）"""
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('Toolbar.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
+                         borderwidth=0, focusthickness=0, padding=(8, 4))
+        style.map('Toolbar.TButton',
+                   background=[('active', COLOR_ACCENT)],
+                   foreground=[('active', 'white')])
+        style.configure('Accent.TButton', background=COLOR_ACCENT, foreground='white',
+                         borderwidth=0, focusthickness=0, padding=(20, 6))
+        style.map('Accent.TButton',
+                   background=[('active', '#005a9e')],
+                   foreground=[('active', 'white')])
+        style.configure('Flat.TButton', background=COLOR_BTN, foreground=COLOR_BTN_FG,
+                         borderwidth=0, focusthickness=0, padding=(20, 6))
+        style.map('Flat.TButton',
+                   background=[('active', '#555555')],
+                   foreground=[('active', 'white')])
+
     def __init__(self):
         self.watchlist = load_watchlist()
         self.quotes = {}
@@ -323,19 +334,14 @@ class WatcherApp:
         self.root = tk.Tk()
         self.root.title('极简盯盘')
         self.root.configure(bg=COLOR_BG)
+
+        # 配置样式
+        self._setup_styles()
         self.root.resizable(True, True)
         self.root.minsize(200, 100)
 
         # 置顶
         self.root.attributes('-topmost', True)
-
-        # macOS: 紧凑工具窗口样式
-        if platform.system() == 'Darwin':
-            try:
-                self.root.tk.call('::tk::unsupported::MacWindowStyle', 'style',
-                                  self.root._w, 'utility', 'closeBox collapseBox resizable')
-            except Exception:
-                pass
 
         # 窗口大小和位置
         self._apply_window_size()
@@ -348,13 +354,8 @@ class WatcherApp:
         tk.Label(toolbar, text=' 自选股行情', bg=COLOR_TITLE, fg=COLOR_FG,
                  font=('Arial', 11, 'bold')).pack(side='left', padx=4)
 
-        btn_style = {'bg': COLOR_BTN, 'fg': COLOR_BTN_FG, 'relief': 'flat',
-                     'font': ('Arial', 11), 'padx': 8, 'pady': 2, 'bd': 0,
-                     'activebackground': COLOR_ACCENT, 'activeforeground': 'white',
-                     'cursor': 'hand2'}
-
-        tk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
-                  **btn_style).pack(side='right', padx=2, pady=3)
+        ttk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
+                   style='Toolbar.TButton').pack(side='right', padx=4, pady=3)
 
         # 内容区域（可滚动）
         self.content_frame = tk.Frame(self.root, bg=COLOR_BG)
