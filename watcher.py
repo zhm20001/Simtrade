@@ -203,6 +203,13 @@ class SettingsWindow:
         )
         self.stock_listbox.pack(side='left', fill='x', expand=True)
 
+        sort_col = tk.Frame(list_frame, bg=COLOR_BG)
+        sort_col.pack(side='right', fill='y', padx=(2, 0))
+        ttk.Button(sort_col, text='▲', width=3, command=self._move_up,
+                   style='Flat.TButton').pack(fill='x')
+        ttk.Button(sort_col, text='▼', width=3, command=self._move_down,
+                   style='Flat.TButton').pack(fill='x')
+
         scrollbar = tk.Scrollbar(list_frame, command=self.stock_listbox.yview)
         scrollbar.pack(side='right', fill='y')
         self.stock_listbox.config(yscrollcommand=scrollbar.set)
@@ -428,6 +435,24 @@ class SettingsWindow:
         code = list(self.code_names.keys())[idx]
         del self.code_names[code]
         self.stock_listbox.delete(idx)
+
+    def _swap_stocks(self, idx1, idx2):
+        codes = list(self.code_names.keys())
+        codes[idx1], codes[idx2] = codes[idx2], codes[idx1]
+        self._populate_list(codes)
+        self.stock_listbox.selection_set(idx2)
+
+    def _move_up(self):
+        sel = self.stock_listbox.curselection()
+        if not sel or sel[0] == 0:
+            return
+        self._swap_stocks(sel[0] - 1, sel[0])
+
+    def _move_down(self):
+        sel = self.stock_listbox.curselection()
+        if not sel or sel[0] >= self.stock_listbox.size() - 1:
+            return
+        self._swap_stocks(sel[0], sel[0] + 1)
 
     def _save(self):
         self._sync_codes_to_group()
