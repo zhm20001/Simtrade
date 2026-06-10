@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec - watcher.app for macOS"""
+"""PyInstaller spec — macOS .app / Windows folder"""
+
+import sys
 
 a = Analysis(
     ['watcher.py'],
@@ -34,15 +36,18 @@ coll = COLLECT(
     upx=False,
     name='极简盯盘',
 )
-app = BUNDLE(
-    coll,
-    name='极简盯盘.app',
-    icon='assets/icon.icns',
-    bundle_identifier='com.simtrade.watcher',
-    info_plist={
-        'CFBundleShortVersionString': '0.7',
-        'CFBundleName': '极简盯盘',
-        'LSUIElement': False,
-        'NSHighResolutionCapable': True,
-    },
-)
+
+# macOS: 生成 .app 包
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='极简盯盘.app',
+        icon='assets/icon.icns',
+        bundle_identifier='com.simtrade.watcher',
+        info_plist={
+            'CFBundleShortVersionString': '0.7',
+            'CFBundleName': '极简盯盘',
+            'LSUIElement': False,
+            'NSHighResolutionCapable': True,
+        },
+    )
