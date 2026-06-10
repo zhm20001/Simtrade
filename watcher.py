@@ -18,7 +18,7 @@ if SCRIPT_DIR not in sys.path:
 
 from core.config import ensure_data_dir, STRATEGY_PATH
 from core.market import get_batch_realtime_prices, get_stock_name
-from core.engine import load_strategy, check_rules
+from core.engine import load_strategy, check_rules, is_trading_hours
 
 WATCHLIST_PATH = os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
 VERSION = '0.6'
@@ -683,7 +683,11 @@ class WatcherApp:
             except Exception:
                 pass
 
-        interval = self.watchlist.get('refresh_interval', 3) * 1000
+        # 非交易时段降低刷新频率
+        if is_trading_hours():
+            interval = self.watchlist.get('refresh_interval', 3) * 1000
+        else:
+            interval = 30000  # 盘后 30 秒一次
         self.root.after(interval, self._refresh)
 
     def _update_labels(self):
