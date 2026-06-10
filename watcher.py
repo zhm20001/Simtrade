@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""极简盯盘 v0.5 — tkinter 置顶窗口，实时显示自选股行情"""
+"""极简盯盘 v0.7 — tkinter 置顶窗口，实时显示自选股行情"""
 
 import json
 import os
@@ -21,7 +21,7 @@ from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules, is_trading_hours
 
 WATCHLIST_PATH = os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
-VERSION = '0.6'
+VERSION = '0.7'
 
 DEFAULT_WATCHLIST = {
     'groups': [{'name': '默认', 'codes': []}],
