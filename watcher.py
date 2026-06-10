@@ -374,6 +374,9 @@ class SettingsWindow:
             if g['name'] == selection:
                 self.active_group_idx = i
                 break
+        self.watchlist['active_group'] = self.active_group_idx
+        self.quotes = {}
+        self._prev_quotes = {}
         self._populate_list(self._current_codes())
 
     def _add_group(self):
