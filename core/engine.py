@@ -13,7 +13,8 @@ from core.config import (
     load_config, ensure_data_dir, DEFAULT_CONFIG,
     PORTFOLIO_PATH, TRADES_PATH, STRATEGY_PATH,
 )
-from core.market import get_stock_name, get_realtime_price, get_batch_realtime_prices
+from core.market import get_stock_name
+from core.cache import get_quote, get_quotes
 
 
 def _flock(f, exclusive=True):
@@ -348,7 +349,7 @@ class Engine:
 
     def buy_market(self, code, qty, reason='', force=False):
         """市价买入（含滑点），返回结果 dict 或抛异常"""
-        price = get_realtime_price(code)
+        price = get_quote(code)['price']
         slip = self.cfg.get('slippage', DEFAULT_CONFIG['slippage'])
         price = round(price * (1 + slip), 2)
         result = self.buy(code, price, qty, reason=reason, force=force)
@@ -358,7 +359,7 @@ class Engine:
 
     def sell_market(self, code, qty, reason='', force=False):
         """市价卖出（含滑点），返回结果 dict 或抛异常"""
-        price = get_realtime_price(code)
+        price = get_quote(code)['price']
         slip = self.cfg.get('slippage', DEFAULT_CONFIG['slippage'])
         price = round(price * (1 - slip), 2)
         result = self.sell(code, price, qty, reason=reason, force=force)
@@ -373,15 +374,15 @@ class Engine:
         total_market_value = 0.0
         total_cost = 0.0
         codes = list(portfolio['positions'].keys())
-        batch = get_batch_realtime_prices(codes) if codes else {}
+        batch = get_quotes(codes) if codes else {}
+        batch = {k: v for k, v in batch.items() if v is not None}
         for code, pos in portfolio['positions'].items():
             if code in batch:
                 current_price = batch[code]['price']
             else:
-                try:
-                    current_price = get_realtime_price(code)
-                except Exception:
-                    current_price = pos['avg_cost']
+                # Code in portfolio but not in cache — daemon should be monitoring it.
+                # Use avg_cost as last resort.
+                current_price = pos['avg_cost']
             market_value = round(current_price * pos['qty'], 2)
             unrealized = round((current_price - pos['avg_cost']) * pos['qty'], 2)
             total_market_value += market_value
@@ -438,15 +439,13 @@ class Engine:
         # 未实现盈亏
         unrealized_pnl = 0.0
         codes = list(portfolio['positions'].keys())
-        batch = get_batch_realtime_prices(codes) if codes else {}
+        batch = get_quotes(codes) if codes else {}
+        batch = {k: v for k, v in batch.items() if v is not None}
         for code, pos in portfolio['positions'].items():
             if code in batch:
                 current_price = batch[code]['price']
             else:
-                try:
-                    current_price = get_realtime_price(code)
-                except Exception:
-                    current_price = pos['avg_cost']
+                current_price = pos['avg_cost']
             unrealized_pnl += (current_price - pos['avg_cost']) * pos['qty']
 
         total_pnl = round(realized_pnl + unrealized_pnl, 2)
@@ -529,7 +528,8 @@ class Engine:
                 if code not in codes_with_positions:
                     codes_with_positions.append(code)
 
-        batch = get_batch_realtime_prices(codes_with_positions) if codes_with_positions else {}
+        batch = get_quotes(codes_with_positions) if codes_with_positions else {}
+        batch = {k: v for k, v in batch.items() if v is not None}
         for p in open_positions:
             current = batch.get(p['code'], {}).get('price', p['buy_price'])
             p['current_price'] = current
@@ -593,7 +593,8 @@ class Engine:
             if not codes_to_fetch:
                 raise ValueError('没有可应用的策略规则')
 
-        batch = get_batch_realtime_prices(codes_to_fetch)
+        batch = get_quotes(codes_to_fetch)
+        batch = {k: v for k, v in batch.items() if v is not None}
         triggered = check_rules(rules, batch)
 
         results = []
