@@ -237,3 +237,13 @@ def _read_log_tail(n=5):
         return [line.rstrip() for line in lines[-n:]]
     except OSError:
         return []
+
+
+def restart():
+    """Stop (tolerates 'not running') then start. Returns start() result."""
+    try:
+        stop()
+    except RuntimeError as e:
+        if 'not running' not in str(e).lower():
+            raise
+    return start()

@@ -186,3 +186,28 @@ def test_status_running_no_cache(tmp_data_dir, monkeypatch):
     assert s['daemon'] == 'running'
     assert s['pid'] == os.getpid()
     assert s['cache'] is None
+
+
+# --- restart ---
+
+def test_restart_calls_stop_then_start(tmp_data_dir, monkeypatch):
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(tmp_data_dir / 'engine.pid'))
+    calls = []
+    monkeypatch.setattr(ctl, 'stop', lambda: calls.append('stop') or {'status': 'stopped'})
+    monkeypatch.setattr(ctl, 'start', lambda: calls.append('start') or {'status': 'started', 'pid': 99})
+    result = ctl.restart()
+    assert calls == ['stop', 'start']
+    assert result['status'] == 'started'
+    assert result['pid'] == 99
+
+
+def test_restart_tolerates_stop_not_running(tmp_data_dir, monkeypatch):
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(tmp_data_dir / 'engine.pid'))
+
+
+    def raise_not_running():
+        raise RuntimeError('not running')
+    monkeypatch.setattr(ctl, 'stop', raise_not_running)
+    monkeypatch.setattr(ctl, 'start', lambda: {'status': 'started', 'pid': 88})
+    result = ctl.restart()
+    assert result['pid'] == 88
