@@ -7,8 +7,10 @@ Daemon calls write_atomic.
 import json
 import os
 import tempfile
+from datetime import datetime
 
 from core import config as _config
+from core.config import load_config
 
 
 class CacheError(Exception):
@@ -58,4 +60,60 @@ def read_cache():
             return json.load(f)
     except json.JSONDecodeError as e:
         raise CacheError(f'cache.json corrupt: {e}') from e
+
+
+def age_secs(data):
+    """Seconds since cache.updated_at. None if timestamp missing/malformed."""
+    ts = data.get('updated_at')
+    if not ts:
+        return None
+    try:
+        updated = datetime.strptime(ts, '%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+        return None
+    return (datetime.now() - updated).total_seconds()
+
+
+def _ttl_for(data):
+    """TTL in seconds, based on trading_active flag in cache."""
+    cfg = load_config()
+    multiplier = cfg.get('cache_ttl_multiplier', 2)
+    if data.get('trading_active', True):
+        return cfg.get('refresh_interval', 3) * multiplier
+    return cfg.get('refresh_interval_off_hours', 60) * multiplier
+
+
+def ensure_fresh(data):
+    """Raise CacheStaleError if cache age exceeds TTL. Returns age_secs otherwise."""
+    age = age_secs(data)
+    if age is None:
+        raise CacheStaleError('cache missing updated_at timestamp')
+    ttl = _ttl_for(data)
+    if age > ttl:
+        raise CacheStaleError(
+            f'cache stale: {int(age)}s old (TTL {int(ttl)}s). '
+            f'Daemon not running? Run: simtrade.py engine status'
+        )
+
+
+def get_quote(code):
+    """Read cache and return quote dict for code. Raises CacheMissingError/StaleError."""
+    data = read_cache()
+    ensure_fresh(data)
+    if code not in data.get('quotes', {}):
+        raise CacheMissingError(
+            f'{code} not in monitor list (watchlist + portfolio). '
+            f'Add via watcher or edit data/watchlist.json'
+        )
+    return data['quotes'][code]
+
+
+def get_quotes(codes):
+    """Read cache and return {code: quote or None}. Raises on stale cache.
+    Missing codes map to None (partial miss). Empty cache quotes -> all None.
+    """
+    data = read_cache()
+    ensure_fresh(data)
+    quotes = data.get('quotes', {})
+    return {code: quotes.get(code) for code in codes}
 
