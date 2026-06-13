@@ -4,7 +4,10 @@ __pycache__/
 .DS_Store
 build/
 dist/
-docs/
+docs/*
+!docs/superpowers/
+!docs/superpowers/**
+docs/superpowers/**/.DS_Store
 TODO.md
 极简盯盘.spec
 assets/icon.iconset/
