@@ -18,10 +18,28 @@ if SCRIPT_DIR not in sys.path:
 
 from core.config import ensure_data_dir, STRATEGY_PATH, PORTFOLIO_PATH, DATA_DIR
 from core import config as config
+from core import cache as cache
 from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules, is_trading_hours
 
 WATCHLIST_PATH = os.path.join(DATA_DIR, 'watchlist.json')
+
+
+def _read_cache_for_refresh():
+    """Read cache for the refresh cycle. Returns dict or None if cache missing.
+    Dict shape: {trading_active, quotes, age_secs, updated_at}"""
+    try:
+        data = cache.read_cache()
+    except cache.CacheMissingError:
+        return None
+    except cache.CacheError:
+        return None
+    return {
+        'trading_active': data.get('trading_active', False),
+        'quotes': data.get('quotes', {}),
+        'age_secs': cache.age_secs(data),
+        'updated_at': data.get('updated_at'),
+    }
 
 
 def migrate_refresh_interval_if_needed():
@@ -829,27 +847,31 @@ class WatcherApp:
         if not self._running:
             return
 
-        codes = get_active_codes(self.watchlist)
-        if codes:
-            try:
-                batch = get_batch_realtime_prices(codes)
-                self._prev_quotes = dict(self.quotes)
-                self.quotes = batch
-                self.positions = load_positions()
-                self._update_labels()
+        refresh_data = _read_cache_for_refresh()
+        if refresh_data is None:
+            self._cache_age = None
+            self._show_daemon_warning('daemon 未启动，运行: simtrade.py engine start')
+        else:
+            self._prev_quotes = dict(self.quotes)
+            self.quotes = refresh_data['quotes']
+            self._cache_age = refresh_data['age_secs']
+            self._trading_active = refresh_data['trading_active']
+            self.positions = load_positions()
+            self._update_labels()
+            self._update_status_bar()
 
-                if is_trading_hours():
-                    strategy = load_strategy()
-                    if strategy.get('rules'):
-                        triggered = check_rules(strategy['rules'], batch)
-                        if triggered:
-                            notify_triggered(triggered, strategy['rules'], batch)
-            except Exception:
-                pass
+            if is_trading_hours():
+                strategy = load_strategy()
+                if strategy.get('rules'):
+                    triggered = check_rules(strategy['rules'], self.quotes)
+                    if triggered:
+                        notify_triggered(triggered, strategy['rules'], self.quotes)
 
-        if is_trading_hours():
-            interval = self.watchlist.get('refresh_interval', 3) * 1000
-            self.root.after(interval, self._refresh)
+        # Schedule next refresh based on trading_active
+        cfg = config.load_config()
+        trading = getattr(self, '_trading_active', True)
+        interval_secs = cfg.get('refresh_interval', 3) if trading else cfg.get('refresh_interval_off_hours', 60)
+        self.root.after(interval_secs * 1000, self._refresh)
 
     def _update_labels(self):
         """只更新文字和颜色，不销毁控件 — 消除闪烁"""
