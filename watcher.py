@@ -642,6 +642,23 @@ class WatcherApp:
         ttk.Button(toolbar, text='⚙ 设置', command=self._open_settings,
                    style='Toolbar.TButton').pack(side='right', padx=4, pady=3)
 
+        # 状态条（顶部、daemon/cache 状态显示）
+        self._cache_age = None
+        self._trading_active = True
+        self._daemon_warning = None
+        self.status_bar = tk.Frame(self.root, bg='#1f1f1f', height=20)
+        self.status_bar.pack(fill=tk.X, side=tk.TOP)
+        self.status_bar.pack_propagate(False)
+        self.status_label = tk.Label(
+            self.status_bar,
+            text='● 初始化中...',
+            font=('Arial', 9),
+            fg='#888888',
+            bg='#1f1f1f',
+            anchor='w',
+        )
+        self.status_label.pack(side=tk.LEFT, padx=8)
+
         # 内容区域（可滚动）
         self.content_frame = tk.Frame(self.root, bg=COLOR_BG)
         self.content_frame.pack(fill='both', expand=True)
@@ -842,6 +859,35 @@ class WatcherApp:
                 'extra2': lbl_extra2,
                 'position': lbl_position,
             }
+
+    def _update_status_bar(self):
+        """Update top status bar based on cache age and daemon state."""
+        cfg = config.load_config()
+        warn_threshold = cfg.get('cache_freshness_warn_secs', 30)
+        ttl_multiplier = cfg.get('cache_ttl_multiplier', 2)
+        if self._trading_active:
+            ttl = cfg.get('refresh_interval', 3) * ttl_multiplier
+        else:
+            ttl = cfg.get('refresh_interval_off_hours', 60) * ttl_multiplier
+
+        if self._cache_age is None:
+            text, color = '⚠ daemon 未运行或 cache 缺失', '#cf4444'
+        elif self._cache_age <= ttl:
+            text, color = f'● 实时 (cache {int(self._cache_age)}s)', '#2ea043'
+        elif self._cache_age <= warn_threshold:
+            text, color = f'⚠ 缓存滞后 {int(self._cache_age)}s', '#cca700'
+        else:
+            text, color = f'⚠ daemon 异常 (缓存 {int(self._cache_age)}s 未更新)', '#cf4444'
+
+        if not self._trading_active and self._cache_age is not None:
+            text += '  [非交易时段]'
+
+        self.status_label.config(text=text, fg=color)
+
+    def _show_daemon_warning(self, message):
+        """Show a persistent warning when daemon is not running."""
+        self._cache_age = None
+        self.status_label.config(text=f'⚠ {message}', fg='#cf4444')
 
     def _refresh(self):
         if not self._running:
