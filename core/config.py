@@ -86,6 +86,9 @@ def reload_config():
 def save_config(cfg):
     """保存配置到 config.json 并更新缓存"""
     global _cached_config
+    config_dir = os.path.dirname(CONFIG_PATH)
+    if config_dir:
+        os.makedirs(config_dir, exist_ok=True)
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     _cached_config = cfg

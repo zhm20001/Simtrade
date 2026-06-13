@@ -16,13 +16,48 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from core.config import ensure_data_dir, STRATEGY_PATH, PORTFOLIO_PATH
+from core.config import ensure_data_dir, STRATEGY_PATH, PORTFOLIO_PATH, DATA_DIR
+from core import config as config
 from core.market import get_batch_realtime_prices, get_stock_name
 from core.engine import load_strategy, check_rules, is_trading_hours
 
-WATCHLIST_PATH = os.path.join(
-    os.path.expanduser('~'), 'simtrade', 'data', 'watchlist.json'
-) if getattr(sys, 'frozen', False) else os.path.join(SCRIPT_DIR, 'data', 'watchlist.json')
+WATCHLIST_PATH = os.path.join(DATA_DIR, 'watchlist.json')
+
+
+def migrate_refresh_interval_if_needed():
+    """One-time migration: move refresh_interval from watchlist.json to config.json.
+    Idempotent. Preserves explicit config.json value if both have it."""
+    if not os.path.exists(WATCHLIST_PATH):
+        return
+    try:
+        with open(WATCHLIST_PATH, 'r', encoding='utf-8') as f:
+            wl = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+    if 'refresh_interval' not in wl:
+        return
+    wl_value = wl.pop('refresh_interval')
+
+    # Read config.json raw (without DEFAULT_CONFIG merge) to detect explicit user setting
+    cfg_path = config.CONFIG_PATH
+    raw_cfg = {}
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                raw_cfg = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            raw_cfg = {}
+
+    if 'refresh_interval' not in raw_cfg:
+        # Merge watchlist value into raw config and write back
+        raw_cfg['refresh_interval'] = wl_value
+        config.save_config(raw_cfg)
+    # Write watchlist without refresh_interval
+    try:
+        with open(WATCHLIST_PATH, 'w', encoding='utf-8') as f:
+            json.dump(wl, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
 VERSION = '0.7'
 
 DEFAULT_WATCHLIST = {
@@ -34,7 +69,6 @@ DEFAULT_WATCHLIST = {
         'turnover': True,
         'amount': False,
     },
-    'refresh_interval': 3,
     'font_size': 13,
     'window_width': 320,
     'window_height': None,
@@ -295,7 +329,7 @@ class SettingsWindow:
         num_frame = tk.Frame(main_frame, bg=COLOR_BG)
         num_frame.pack(fill='x', **pad)
 
-        self.refresh_var = tk.IntVar(value=wl['refresh_interval'])
+        self.refresh_var = tk.IntVar(value=config.load_config().get('refresh_interval', 3))
         self.font_var = tk.IntVar(value=wl['font_size'])
         self.width_var = tk.IntVar(value=wl['window_width'])
         self.opacity_var = tk.DoubleVar(value=wl.get('opacity', 0.95))
@@ -501,13 +535,16 @@ class SettingsWindow:
                 'groups': [{'name': g['name'], 'codes': list(g['codes'])} for g in self.groups],
                 'active_group': self.active_group_idx,
                 'fields': fields,
-                'refresh_interval': self.refresh_var.get(),
                 'font_size': self.font_var.get(),
                 'window_width': self.width_var.get(),
                 'window_height': None if not self.auto_height_var.get() else self.height_var.get(),
                 'opacity': round(self.opacity_var.get(), 2),
             }
             save_watchlist(wl)
+            # Save refresh_interval to config.json (migrated from watchlist)
+            cfg = config.load_config()
+            cfg['refresh_interval'] = self.refresh_var.get()
+            config.save_config(cfg)
             self.watcher.watchlist = wl
             self.watcher.apply_settings()
             self.win.destroy()
@@ -898,6 +935,7 @@ class WatcherApp:
 
 def main():
     _init_user_data()
+    migrate_refresh_interval_if_needed()
     app = WatcherApp()
     app.run()
 
