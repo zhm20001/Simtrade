@@ -61,12 +61,12 @@ def cmd_status(args):
 def cmd_quote(args):
     code = args.code
     try:
-        price = get_realtime_price(code)
-        name = get_stock_name(code)
+        from core.cache import get_quote
+        quote = get_quote(code)
         json_output({
             'code': code,
-            'name': name,
-            'price': price,
+            'name': quote.get('name', code),
+            'price': quote['price'],
             'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
         })
     except Exception as e:
@@ -74,24 +74,20 @@ def cmd_quote(args):
 
 
 def cmd_quotes(args):
+    from core.cache import get_quotes
     codes = [c.strip() for c in args.codes.split(',')]
-    batch = get_batch_realtime_prices(codes)
+    quotes_map = get_quotes(codes)
     results = []
     for code in codes:
-        if code in batch:
-            info = {'code': code, 'name': batch[code]['name'], 'price': batch[code]['price']}
-            # 附加字段（如果有的话）
+        q = quotes_map.get(code)
+        if q:
+            info = {'code': code, 'name': q.get('name', code), 'price': q['price']}
             for key in ['change', 'change_pct', 'volume', 'turnover', 'high', 'low', 'open']:
-                if key in batch[code]:
-                    info[key] = batch[code][key]
+                if key in q:
+                    info[key] = q[key]
             results.append(info)
         else:
-            try:
-                price = get_realtime_price(code)
-                name = get_stock_name(code)
-                results.append({'code': code, 'name': name, 'price': price})
-            except Exception as e:
-                results.append({'code': code, 'error': str(e)})
+            results.append({'code': code, 'error': '不在监控清单（watchlist + portfolio）'})
     json_output({'quotes': results, 'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')})
 
 
