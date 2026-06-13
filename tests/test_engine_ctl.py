@@ -124,3 +124,65 @@ def test_start_when_daemon_crashes_raises(tmp_data_dir, monkeypatch):
 
     with pytest.raises(RuntimeError, match='failed to start'):
         ctl.start()
+
+
+# --- stop + status ---
+
+def test_stop_when_no_pid_raises(tmp_data_dir, monkeypatch):
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(tmp_data_dir / 'nope.pid'))
+    with pytest.raises(RuntimeError, match='not running'):
+        ctl.stop()
+
+
+def test_stop_stale_pid_cleans_and_reports(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text('999999')
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+    result = ctl.stop()
+    assert not pid_path.exists()
+    assert 'stale' in result['status'].lower()
+
+
+def test_stop_live_pid_sends_terminate(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text(str(os.getpid()))  # us
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+
+    terminated = []
+
+    def fake_terminate(pid, timeout):
+        terminated.append(pid)
+        return True
+
+    monkeypatch.setattr(ctl, '_terminate_pid', fake_terminate)
+    result = ctl.stop()
+    assert terminated == [os.getpid()]
+    assert not pid_path.exists()
+    assert result['status'] == 'stopped'
+
+
+def test_status_not_started(tmp_data_dir, monkeypatch):
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(tmp_data_dir / 'nope.pid'))
+    s = ctl.status()
+    assert s['daemon'] == 'not_started'
+    assert s['pid'] is None
+
+
+def test_status_crashed(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text('999999')
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+    s = ctl.status()
+    assert s['daemon'] == 'crashed'
+    assert s['pid'] is None
+
+
+def test_status_running_no_cache(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text(str(os.getpid()))
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+    monkeypatch.setattr(cfg_mod, 'CACHE_PATH', str(tmp_data_dir / 'no-cache.json'))
+    s = ctl.status()
+    assert s['daemon'] == 'running'
+    assert s['pid'] == os.getpid()
+    assert s['cache'] is None
