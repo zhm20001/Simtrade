@@ -18,6 +18,8 @@ from core.market import (
     fetch_with_fallback,
     get_price,
 )
+from core.cache import CacheError
+from core import engine_ctl
 from core.config import STRATEGY_PATH
 import os
 
@@ -38,7 +40,7 @@ def safe_execute(func, *args, **kwargs):
     try:
         result = func(*args, **kwargs)
         json_output(result)
-    except (ValueError, RuntimeError, FileNotFoundError) as e:
+    except (ValueError, RuntimeError, FileNotFoundError, CacheError) as e:
         json_error(str(e))
     except Exception as e:
         json_error(f'{type(e).__name__}: {e}')
@@ -137,98 +139,6 @@ def cmd_report(args):
     safe_execute(engine.report, last_n=args.last)
 
 
-def cmd_watch(args):
-    """持续监控行情，价格变动超阈值时输出信号"""
-    import time
-
-    codes = [c.strip() for c in args.codes.split(',')]
-    cfg = load_config()
-    threshold = args.threshold if args.threshold else cfg.get('watch_threshold', 1.0)
-    interval = args.interval if args.interval else cfg.get('watch_interval', 2)
-    heartbeat_interval = cfg.get('watch_heartbeat_interval', 10)
-
-    batch = fetch_with_fallback(codes)
-    base_prices = {}
-    for code in codes:
-        if code in batch:
-            base_prices[code] = batch[code]['price']
-            print(json.dumps({
-                'type': 'start',
-                'code': code,
-                'name': batch[code]['name'],
-                'base_price': batch[code]['price'],
-                'threshold': threshold,
-                'interval': interval,
-            }, ensure_ascii=False))
-        else:
-            print(json.dumps({'type': 'error', 'code': code, 'message': f'无法获取 {code} 行情'}, ensure_ascii=False))
-            return
-
-    sys.stdout.flush()
-    last_alert_prices = dict(base_prices)
-    poll_count = 0
-
-    try:
-        while True:
-            time.sleep(interval)
-            poll_count += 1
-            batch = fetch_with_fallback(codes)
-            for code in codes:
-                if code not in batch:
-                    continue
-                current = batch[code]['price']
-                base = base_prices[code]
-                last = last_alert_prices[code]
-                change_from_base = (current - base) / base * 100
-
-                if abs(current - last) / last * 100 >= threshold:
-                    direction = 'up' if current > last else 'down'
-                    print(json.dumps({
-                        'type': 'alert',
-                        'code': code,
-                        'name': batch[code]['name'],
-                        'base_price': base,
-                        'prev_price': last,
-                        'current_price': current,
-                        'change_pct': round((current - last) / last * 100, 2),
-                        'total_change_pct': round(change_from_base, 2),
-                        'direction': direction,
-                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-                    }, ensure_ascii=False))
-                    sys.stdout.flush()
-                    last_alert_prices[code] = current
-
-            if poll_count % heartbeat_interval == 0:
-                prices = {code: batch.get(code, {}).get('price', base_prices[code]) for code in codes}
-                print(json.dumps({
-                    'type': 'heartbeat',
-                    'prices': prices,
-                    'poll_count': poll_count,
-                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-                }, ensure_ascii=False))
-                sys.stdout.flush()
-
-    except KeyboardInterrupt:
-        batch = fetch_with_fallback(codes)
-        final_prices = {}
-        for code in codes:
-            current = batch.get(code, {}).get('price', base_prices[code])
-            base = base_prices[code]
-            final_prices[code] = {
-                'base_price': base,
-                'current_price': current,
-                'change_pct': round((current - base) / base * 100, 2),
-            }
-        print(json.dumps({
-            'type': 'summary',
-            'poll_count': poll_count,
-            'duration_seconds': poll_count * interval,
-            'prices': final_prices,
-            'timestamp': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-        }, ensure_ascii=False))
-        sys.stdout.flush()
-
-
 def cmd_strategy(args):
     engine = Engine()
     subcmd = args.strategy_cmd
@@ -241,6 +151,20 @@ def cmd_strategy(args):
         safe_execute(engine.strategy_apply, code=args.code)
     else:
         json_error('未知策略子命令，使用 list / load / apply')
+
+
+def cmd_engine(args):
+    subcmd = args.engine_cmd
+    if subcmd == 'start':
+        safe_execute(engine_ctl.start)
+    elif subcmd == 'stop':
+        safe_execute(engine_ctl.stop)
+    elif subcmd == 'restart':
+        safe_execute(engine_ctl.restart)
+    elif subcmd == 'status':
+        json_output(engine_ctl.status())
+    else:
+        json_error(f'未知 engine 子命令: {subcmd}')
 
 
 def cmd_config(args):
@@ -332,17 +256,19 @@ def main():
     p_report = sub.add_parser('report', help='交易复盘报告')
     p_report.add_argument('--last', type=int, help='最近N笔')
 
-    p_watch = sub.add_parser('watch', help='持续监控行情')
-    p_watch.add_argument('codes', help='股票代码，逗号分隔')
-    p_watch.add_argument('--threshold', type=float, help='变动告警阈值(百分比)，默认1.0')
-    p_watch.add_argument('--interval', type=int, help='轮询间隔(秒)，默认2')
-
     p_strategy = sub.add_parser('strategy', help='策略管理')
     p_strategy_sub = p_strategy.add_subparsers(dest='strategy_cmd', help='策略子命令')
     p_strategy_sub.add_parser('list', help='查看当前策略')
     p_strategy_sub.add_parser('load', help='加载策略文件')
     p_apply = p_strategy_sub.add_parser('apply', help='对指定股票应用策略')
     p_apply.add_argument('code', help='股票代码（省略则检查所有）', nargs='?', default=None)
+
+    p_engine = sub.add_parser('engine', help='本地数据 engine daemon 管理')
+    p_engine_sub = p_engine.add_subparsers(dest='engine_cmd', help='engine 子命令')
+    p_engine_sub.add_parser('start', help='启动 daemon')
+    p_engine_sub.add_parser('stop', help='停止 daemon')
+    p_engine_sub.add_parser('restart', help='重启 daemon')
+    p_engine_sub.add_parser('status', help='查看 daemon 状态')
 
     p_config = sub.add_parser('config', help='配置管理')
     p_config_sub = p_config.add_subparsers(dest='config_cmd', help='配置子命令')
@@ -367,9 +293,9 @@ def main():
         'pnl': cmd_pnl,
         'reset': cmd_reset,
         'report': cmd_report,
-        'watch': cmd_watch,
         'strategy': cmd_strategy,
         'config': cmd_config,
+        'engine': cmd_engine,
     }
 
     if args.command in commands:
