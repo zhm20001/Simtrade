@@ -2,12 +2,12 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+**/.DS_Store
 build/
 dist/
 docs/*
 !docs/superpowers/
 !docs/superpowers/**
-docs/superpowers/**/.DS_Store
 TODO.md
 极简盯盘.spec
 assets/icon.iconset/
