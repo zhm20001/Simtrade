@@ -7,7 +7,14 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _resolve_data_dir():
-    """打包后数据目录指向 ~/simtrade/data/，开发时用项目 data/"""
+    """数据目录解析顺序：
+    1. SIMTRADE_DATA_DIR 环境变量（测试用）
+    2. 打包后指向 ~/simtrade/data/
+    3. 开发时用项目 data/
+    """
+    env_dir = os.environ.get('SIMTRADE_DATA_DIR')
+    if env_dir:
+        return env_dir
     if getattr(sys, 'frozen', False):
         return os.path.join(os.path.expanduser('~'), 'simtrade', 'data')
     return os.path.join(SCRIPT_DIR, 'data')

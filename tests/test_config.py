@@ -26,3 +26,11 @@ def test_engine_pid_path_constant_exists():
 def test_engine_log_path_constant_exists():
     assert hasattr(cfg_mod, 'ENGINE_LOG_PATH')
     assert cfg_mod.ENGINE_LOG_PATH.endswith('engine.log')
+
+
+def test_data_dir_env_override(tmp_path, monkeypatch):
+    """SIMTRADE_DATA_DIR env var overrides default DATA_DIR resolution."""
+    custom = tmp_path / 'custom-data'
+    monkeypatch.setenv('SIMTRADE_DATA_DIR', str(custom))
+    new_dir = cfg_mod._resolve_data_dir()
+    assert new_dir == str(custom)
