@@ -126,7 +126,12 @@ def main():
     log('engine daemon starting')
     while _running:
         _tick()
-        time.sleep(_next_sleep_secs())
+        # Sleep in 0.5s increments so SIGTERM (which flips _running) is detected quickly
+        remaining = _next_sleep_secs()
+        while _running and remaining > 0:
+            step = min(0.5, remaining)
+            time.sleep(step)
+            remaining -= step
     log('engine daemon stopping')
     # Clean up PID file on graceful exit
     try:
