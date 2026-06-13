@@ -59,3 +59,68 @@ def test_is_running_false_when_stale_pid(tmp_data_dir, monkeypatch):
     pid_path.write_text('999999')
     monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
     assert ctl.is_running() is False
+
+
+# --- start ---
+
+import subprocess
+from unittest.mock import patch
+
+
+def test_start_when_already_running_raises(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text(str(os.getpid()))  # write OUR pid so _pid_alive returns True
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+    with pytest.raises(RuntimeError, match='already running'):
+        ctl.start()
+
+
+def test_start_self_heals_stale_pid(tmp_data_dir, monkeypatch):
+    pid_path = tmp_data_dir / 'engine.pid'
+    pid_path.write_text('999999')  # dead PID
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(pid_path))
+
+    started_popen = []
+
+    class FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+
+    def fake_popen(*args, **kwargs):
+        p = FakeProc(pid=22222)
+        started_popen.append(p)
+        return p
+
+    def fake_wait_for_cache(pid, timeout):
+        # Simulate daemon writing cache
+        import json
+        cache_path = str(tmp_data_dir / 'cache.json')
+        with open(cache_path, 'w') as f:
+            json.dump({'updated_at': '2026-06-13T14:30:15', 'trading_active': True, 'quotes': {}}, f)
+        return True
+
+    monkeypatch.setattr(subprocess, 'Popen', fake_popen)
+    monkeypatch.setattr(ctl, '_wait_for_initial_cache', fake_wait_for_cache)
+
+    result = ctl.start()
+    assert pid_path.read_text() == '22222'  # stale cleaned, new written
+    assert result['status'] == 'started'
+    assert result['pid'] == 22222
+    assert started_popen, "subprocess.Popen was called"
+
+
+def test_start_when_daemon_crashes_raises(tmp_data_dir, monkeypatch):
+    monkeypatch.setattr(cfg_mod, 'ENGINE_PID_PATH', str(tmp_data_dir / 'engine.pid'))
+
+    class FakeProc:
+        def __init__(self):
+            self.pid = 33333
+
+    def fake_popen(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, 'Popen', fake_popen)
+    monkeypatch.setattr(ctl, '_wait_for_initial_cache', lambda pid, timeout: False)
+
+    with pytest.raises(RuntimeError, match='failed to start'):
+        ctl.start()

@@ -6,7 +6,9 @@ Cross-platform: Unix uses signal.SIGTERM, Windows uses taskkill.
 import errno
 import os
 import signal
+import subprocess
 import sys
+import time
 
 from core import config as _config
 
@@ -87,3 +89,56 @@ def is_running():
     if pid is None:
         return False
     return _pid_alive(pid)
+
+
+# --- start ---
+
+def _spawn_daemon():
+    """Launch daemon as detached subprocess. Returns Popen object."""
+    log_path = _engine_log_path()
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_fp = open(log_path, 'a', encoding='utf-8')
+    kwargs = dict(
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+    )
+    if sys.platform != 'win32':
+        kwargs['start_new_session'] = True  # detach from controlling terminal (Unix)
+    return subprocess.Popen(
+        [sys.executable, '-m', 'core.engine_daemon'],
+        **kwargs,
+    )
+
+
+def _wait_for_initial_cache(pid, timeout=2.0):
+    """Poll for cache.json existence until timeout. Returns True if appeared."""
+    cache_path = _cache_path()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_alive(pid):
+            return False
+        if os.path.exists(cache_path):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def start():
+    """Start daemon. Self-heals stale PID. Returns dict with status/pid.
+    Raises RuntimeError if already running or daemon fails to write cache."""
+    pid = read_pid()
+    if pid is not None:
+        if _pid_alive(pid):
+            raise RuntimeError(f'daemon already running, PID={pid}')
+        # Stale PID — self-heal
+        clear_pid()
+
+    proc = _spawn_daemon()
+    write_pid(proc.pid)
+
+    if not _wait_for_initial_cache(proc.pid, timeout=2.0):
+        clear_pid()
+        raise RuntimeError('daemon failed to start within 2s — see data/engine.log')
+
+    return {'status': 'started', 'pid': proc.pid}
