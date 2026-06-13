@@ -18,6 +18,9 @@ PORTFOLIO_PATH = os.path.join(DATA_DIR, 'portfolio.json')
 TRADES_PATH = os.path.join(DATA_DIR, 'trades.csv')
 NAMES_PATH = os.path.join(DATA_DIR, 'stock_names.json')
 STRATEGY_PATH = os.path.join(DATA_DIR, 'strategy.json')
+CACHE_PATH = os.path.join(DATA_DIR, 'cache.json')
+ENGINE_PID_PATH = os.path.join(DATA_DIR, 'engine.pid')
+ENGINE_LOG_PATH = os.path.join(DATA_DIR, 'engine.log')
 
 DEFAULT_CONFIG = {
     'default_cash': 1000000,
@@ -33,6 +36,10 @@ DEFAULT_CONFIG = {
     'watch_interval': 2,
     'watch_threshold': 1.0,
     'watch_heartbeat_interval': 10,
+    'refresh_interval': 3,
+    'refresh_interval_off_hours': 60,
+    'cache_ttl_multiplier': 2,
+    'cache_freshness_warn_secs': 30,
 }
 
 _cached_config = None
